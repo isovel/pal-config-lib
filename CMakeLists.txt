@@ -28,13 +28,18 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND CMAKE_CXX_COMPILER_FRONTEND_VARIANT
     add_compile_options(-Wno-deprecated-enum-enum-conversion)
 endif()
 
-# Stage 1 is header-only: the schema is pure compile-time metadata. The STATIC
-# library arrives with the JSON backend, which is what keeps json.hpp out of
-# consumer translation units.
-add_library(palcfg_core INTERFACE)
-target_include_directories(palcfg_core INTERFACE
+# STATIC, so json.hpp and the JSON backend compile once here and stay out of
+# every consumer's translation units.
+add_library(palcfg_core STATIC
+    "src/core/Jsonc.cpp"
+    "src/core/JsonBackend.cpp"
+)
+target_include_directories(palcfg_core PUBLIC
     "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>")
-target_compile_features(palcfg_core INTERFACE cxx_std_23)
+# PRIVATE: json.hpp is an implementation detail of this library.
+target_include_directories(palcfg_core PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party")
+target_compile_features(palcfg_core PUBLIC cxx_std_23)
 add_library(PalCfg::Core ALIAS palcfg_core)
 
 if(PALCFG_BUILD_TESTS)

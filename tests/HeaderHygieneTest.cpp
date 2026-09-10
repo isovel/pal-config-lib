@@ -4,7 +4,10 @@
 //
 // This target only has to COMPILE, so it carries no test cases.
 
+#include <PalCfg/Document.hpp>
+#include <PalCfg/Jsonc.hpp>
 #include <PalCfg/Schema.hpp>
+#include <PalCfg/Value.hpp>
 
 namespace
 {
@@ -18,4 +21,15 @@ namespace
     inline constexpr auto kProbeFields = kProbe.Flatten();
 
     static_assert(kProbeFields.size() == 1);
+
+    // Instantiated so the seam's types are exercised, going beyond a parse.
+    void TouchSeam(const PalCfg::IValueSource& source, PalCfg::Document& doc)
+    {
+        double value = 0.0;
+        source.Child("value", [&](const PalCfg::IValueSource& child) { child.AsDouble(value); });
+        (void)doc.Ok();
+
+        std::string text = "{}";
+        (void)PalCfg::SanitiseJsonc(text);
+    }
 } // namespace

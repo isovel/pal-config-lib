@@ -8,6 +8,8 @@ FetchContent_MakeAvailable(Catch2)
 
 add_executable(palcfg_tests
     SchemaTest.cpp
+    JsoncTest.cpp
+    DocumentTest.cpp
 )
 target_link_libraries(palcfg_tests PRIVATE PalCfg::Core Catch2::Catch2WithMain)
 

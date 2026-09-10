@@ -6,11 +6,12 @@ the JSON parser, the defaults, a documented-file writer and a settings-menu sche
 Extracted from three mods that each hand-rolled their own: PerkyPals, iaho
 (I Already Have One) and DynamicPals.
 
-## Status: stage 1 of v1 — the schema only
+## Status: stage 2 of v1
 
-`PalCfg::Schema` describes a settings struct at compile time. Parsing, file
-writing, hot reload and the menu registry arrive in later stages; see the
-roadmap.
+`PalCfg::Schema` describes a settings struct at compile time, and
+`PalCfg::Document` parses JSONC behind an abstract seam. Binding the two
+together, plus file writing, hot reload and the menu registry, arrives in later
+stages; see the roadmap.
 
 ```cpp
 #include <PalCfg/Schema.hpp>
@@ -57,12 +58,56 @@ storage duration for `Flatten()` to be usable in a constant expression. Use
 
 Exceeding four aliases is a compile error.
 
+## Reading a document
+
+```cpp
+#include <PalCfg/Document.hpp>
+
+PalCfg::Document doc;
+if (!doc.Parse(std::move(text)))
+{
+    // Document-level failure. A caller MUST keep the settings it already has.
+    Log(doc.Error().message);
+    return;
+}
+
+doc.Root().Child("arousalRate", [&](const PalCfg::IValueSource& value) {
+    double rate = 0.0;
+    if (value.AsDouble(rate)) settings.ArousalRate = static_cast<float>(rate);
+});
+```
+
+`Child()` and `Element()` take a visitor, so no node handle escapes the seam and
+a borrowed node cannot outlive its visit. Each `AsX` reports only what the node
+naturally holds and leaves its output alone otherwise; cross-type coercion
+arrives with `ValueTraits` in stage 3.
+
+### Tolerating hand-edited files
+
+`Parse` runs `SanitiseJsonc` first, which removes a UTF-8 BOM and any trailing
+commas, and reports both so a caller can raise a note. nlohmann rejects a
+trailing comma outright, which would cost a user every setting in the file over
+one character that most config formats accept.
+
+The scan tracks string and comment state, so a comma inside `"Idle,Wait"`, inside
+`// rate, hold, decay`, or behind an escaped quote survives untouched. Comments
+between a comma and its closing brace are skipped, so `1,  // last one` followed
+by `}` still counts as trailing.
+
+`SanitiseJsonc` is public, and usable on its own.
+
 ## Design notes
 
 **No public header includes `json.hpp` or `Windows.h`.** PerkyPals kept nlohmann
 (~956 KB) out of its own config header; here the build enforces it. `tests/trap/`
 puts an `#error`-ing stub of each ahead of the real include path, so either
-include fails the build.
+include fails the build. nlohmann 3.12.0 is vendored under `third_party/`, the
+same file both JSON-using mods already carry, and it is a PRIVATE include of the
+static library.
+
+Field parsing will be templated on the member type, so it compiles in the
+consumer's own translation unit. `IValueSource` is what keeps those templates
+away from `nlohmann::json`, at the cost of one virtual call per scalar read.
 
 **Schemas cost nothing at runtime.** Verified with `llvm-nm`: `kSchema` and
 `kFields` land in read-only data with zero dynamic initialisers, so they are fully
@@ -109,8 +154,8 @@ target_link_libraries(MyMod PRIVATE PalCfg::Core)
 | Stage | Contents |
 | --- | --- |
 | 1 ✅ | `Schema`, `FieldMeta`, `Flatten()` |
-| 2 | `IValueSource`/`IValueSink`, the nlohmann backend behind that seam, and a tolerant pre-pass for trailing commas |
-| 3 | `ValueTraits` for scalars, `string`/`wstring`, `vector`, `optional`, `unordered_set` and enums; a real UTF-8 ↔ UTF-16 converter |
+| 2 ✅ | `IValueSource`, the nlohmann backend behind that seam, `Document`, and `SanitiseJsonc` |
+| 3 | `ValueTraits` for scalars, `string`/`wstring`, `vector`, `optional`, `unordered_set` and enums; a real UTF-8 ↔ UTF-16 converter, and the `FieldOps` thunks that bind a schema to a document |
 | 4 | Coercion, dotted-key nesting, clamping, aliasing, case-insensitive keys, `FieldPair().SwapIfInverted()` |
 | 5 | Diagnostics and the two-tier error model: a bad field keeps its default, a bad document keeps the live settings |
 | later | The documented-file writer, hot reload, the Win32 platform layer, and the optional C-ABI registry that lets a settings menu enumerate every mod |
