@@ -6,12 +6,11 @@ the JSON parser, the defaults, a documented-file writer and a settings-menu sche
 Extracted from three mods that each hand-rolled their own: PerkyPals, iaho
 (I Already Have One) and DynamicPals.
 
-## Status: stage 2 of v1
+## Status: stage 3 of v1
 
-`PalCfg::Schema` describes a settings struct at compile time, and
-`PalCfg::Document` parses JSONC behind an abstract seam. Binding the two
-together, plus file writing, hot reload and the menu registry, arrives in later
-stages; see the roadmap.
+A schema now loads a settings struct from a JSONC document. Dotted keys,
+aliases, coercion and clamping arrive in stage 4; file writing, hot reload and
+the menu registry come later. See the roadmap.
 
 ```cpp
 #include <PalCfg/Schema.hpp>
@@ -57,6 +56,67 @@ storage duration for `Flatten()` to be usable in a constant expression. Use
 `inline constexpr` so every translation unit shares one object.
 
 Exceeding four aliases is a compile error.
+
+## Loading a struct
+
+```cpp
+#include <PalCfg/Document.hpp>
+#include <PalCfg/Load.hpp>
+
+inline constexpr auto kFields = kSchema.Flatten();
+
+PalCfg::Document doc;
+if (!doc.Parse(std::move(text))) return;  // keep the settings already held
+
+Settings settings{};                      // member initialisers are the defaults
+PalCfg::LoadFields(kFields, doc.Root(), settings);
+```
+
+A load starts from a freshly default-constructed struct, so deleting a key from
+the file restores that field's default. A field whose key is absent, or whose
+value its traits decline, keeps the value already there — one malformed field
+costs that field alone.
+
+### Supported types
+
+`bool`, every integral, `float`, `double`, `std::string`, `std::wstring`,
+`std::vector<T>`, `std::unordered_set<T>`, `std::optional<T>`, and enums. Element
+types recurse, so `std::vector<std::wstring>` works.
+
+An integer too large for its target keeps the default, so one digit too many
+avoids silently wrapping.
+
+Enums opt in by naming their values, and accept a name case-insensitively or the
+underlying number:
+
+```cpp
+template <>
+struct PalCfg::EnumNames<LogVerbosity>
+{
+    static constexpr std::array<std::pair<std::string_view, LogVerbosity>, 3> kValues{{
+        {"quiet", LogVerbosity::Quiet},
+        {"normal", LogVerbosity::Normal},
+        {"discovery", LogVerbosity::Discovery},
+    }};
+};
+```
+
+A mod supports a type of its own by specialising `PalCfg::ValueTraits<MyType>`
+with `kKind` and `Read`. No registration, no inheritance.
+
+The specialisation MUST appear before the schema that uses the type.
+
+### Wide strings
+
+`Utf8ToWide` and `WideToUtf8` do real conversion. PerkyPals' `Widen` did
+`std::wstring(s.begin(), s.end())`, which copies each byte into its own
+`wchar_t`, so a non-ASCII morph target or action name silently became mojibake.
+Malformed input yields U+FFFD per maximal subpart, following Unicode's
+recommended practice, and overlong encodings, surrogates and out-of-range code
+points are all rejected.
+
+`wchar_t` is 16 bits on Windows and 32 on Linux, so these produce UTF-16 or
+UTF-32 to match.
 
 ## Reading a document
 
@@ -105,9 +165,16 @@ include fails the build. nlohmann 3.12.0 is vendored under `third_party/`, the
 same file both JSON-using mods already carry, and it is a PRIVATE include of the
 static library.
 
-Field parsing will be templated on the member type, so it compiles in the
-consumer's own translation unit. `IValueSource` is what keeps those templates
-away from `nlohmann::json`, at the cost of one virtual call per scalar read.
+Field parsing is templated on the member type, so it compiles in the consumer's
+own translation unit. `IValueSource` is what keeps those templates away from
+`nlohmann::json`, at the cost of one virtual call per scalar read.
+
+**`FieldOps` are keyed on types alone.** `OpsFor<T, M>` never takes the
+member-pointer *value* as a template argument, so a schema of N fields over K
+distinct member types yields K thunks. The member pointer travels as data in
+`FieldRuntime::boundMemberPtr`, which is what lets
+`.Field("key", &Settings::Member)` keep its syntax while the descriptor array
+stays homogeneous.
 
 **Schemas cost nothing at runtime.** Verified with `llvm-nm`: `kSchema` and
 `kFields` land in read-only data with zero dynamic initialisers, so they are fully
@@ -155,8 +222,8 @@ target_link_libraries(MyMod PRIVATE PalCfg::Core)
 | --- | --- |
 | 1 ✅ | `Schema`, `FieldMeta`, `Flatten()` |
 | 2 ✅ | `IValueSource`, the nlohmann backend behind that seam, `Document`, and `SanitiseJsonc` |
-| 3 | `ValueTraits` for scalars, `string`/`wstring`, `vector`, `optional`, `unordered_set` and enums; a real UTF-8 ↔ UTF-16 converter, and the `FieldOps` thunks that bind a schema to a document |
-| 4 | Coercion, dotted-key nesting, clamping, aliasing, case-insensitive keys, `FieldPair().SwapIfInverted()` |
+| 3 ✅ | `ValueTraits`, the `FieldOps` thunks, `LoadFields`, and a real UTF-8 ↔ UTF-16 converter |
+| 4 | Coercion across types, dotted-key nesting, clamping, aliases, case-insensitive keys, `FieldPair().SwapIfInverted()` |
 | 5 | Diagnostics and the two-tier error model: a bad field keeps its default, a bad document keeps the live settings |
 | later | The documented-file writer, hot reload, the Win32 platform layer, and the optional C-ABI registry that lets a settings menu enumerate every mod |
 

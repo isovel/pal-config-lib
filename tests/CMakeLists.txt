@@ -10,6 +10,8 @@ add_executable(palcfg_tests
     SchemaTest.cpp
     JsoncTest.cpp
     DocumentTest.cpp
+    UtfTest.cpp
+    LoadTest.cpp
 )
 target_link_libraries(palcfg_tests PRIVATE PalCfg::Core Catch2::Catch2WithMain)
 
