@@ -40,6 +40,9 @@ namespace
     }
 } // namespace
 
+// .SwapIfInverted() away from a .FieldPair() is a compile error, so it cannot be
+// covered here. Verified by hand over four shapes: after a single .Field(), after
+// two, on an empty schema, and with a .Field() between the pair and the call.
 TEST_CASE("a pair declares two fields")
 {
     STATIC_REQUIRE(kFields.size() == 4);

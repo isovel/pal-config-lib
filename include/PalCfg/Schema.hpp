@@ -90,11 +90,17 @@ namespace PalCfg
                 2};
         }
 
-        // MUST follow a .FieldPair().
+        // MUST follow a .FieldPair(), which the compiler enforces: a pair's lower
+        // field names its partner, and anything else indexes past the array, a
+        // hard error during constant evaluation. Without the check this would
+        // quietly mark a field the loader then skips, so the invariant a caller
+        // asked for would go missing with no signal.
         constexpr Schema SwapIfInverted() const
         {
             auto meta = m_meta;
-            meta[Count - 2].swapIfInverted = true;
+            const bool followsPair = Count >= 2 && meta[Count - 2].pairPartner == Count - 1;
+
+            meta[followsPair ? Count - 2 : Count].swapIfInverted = true;
             return Schema{m_modId, m_members, meta, m_caseInsensitiveKeys, m_lastSpan};
         }
 

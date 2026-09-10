@@ -124,8 +124,9 @@ PerkyPals swapped these by hand after parsing. Declaring the invariant also tell
 a settings menu to draw one two-handled slider in place of two disconnected spin
 boxes.
 
-`.SwapIfInverted()` MUST follow a `.FieldPair()`, and it runs after every field is
-loaded, so it sees coerced and clamped values. Inference from a `Min`/`Max` name
+`.SwapIfInverted()` MUST follow a `.FieldPair()`, which the compiler enforces:
+calling it anywhere else fails the build. It runs after every field is loaded, so
+it sees coerced and clamped values. Inference from a `Min`/`Max` name
 suffix is deliberately absent: silently reordering a user's numbers on implicit
 magic is the wrong kind of clever.
 
