@@ -29,6 +29,9 @@ namespace PalCfg
         Optional,
     };
 
+    // No paired field.
+    inline constexpr std::size_t kNoPair = static_cast<std::size_t>(-1);
+
     // How many alternative spellings one key may answer to. Four covers the
     // renames in the mods being migrated; a fixed array keeps FieldMeta a
     // literal type with no allocation.
@@ -60,6 +63,18 @@ namespace PalCfg
         // "advanced" disclosure respectively.
         bool hidden = false;
         bool advanced = false;
+
+        // Set for every field of a schema that asked for it. Carried per-field so
+        // one flat descriptor array stays the whole contract for loading.
+        bool caseInsensitiveKeys = false;
+
+        // Set on the lower field of a .FieldPair, naming the upper one. A settings
+        // menu reads this to draw one two-handled slider for the pair.
+        std::size_t pairPartner = kNoPair;
+
+        // Whether that pair restores order when the file has the two the wrong way
+        // round. Held on the lower field, so the rule is applied once.
+        bool swapIfInverted = false;
     };
 
     // The type-erased hook for one field type. One instance per (struct, member
@@ -75,6 +90,13 @@ namespace PalCfg
                       const void* boundMemberPtr,
                       const IValueSource& source,
                       const FieldMeta& meta) = nullptr;
+
+        // Exchanges two members of `base` when the lower holds more than the
+        // upper. Null for types with no ordering, which is what makes
+        // .SwapIfInverted meaningless on them.
+        void (*swapIfInverted)(void* base,
+                               const void* lowerMemberPtr,
+                               const void* upperMemberPtr) = nullptr;
     };
 
     // Flat, homogeneous descriptor. One per field, consumed by the loader, the

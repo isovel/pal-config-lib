@@ -6,11 +6,11 @@ the JSON parser, the defaults, a documented-file writer and a settings-menu sche
 Extracted from three mods that each hand-rolled their own: PerkyPals, iaho
 (I Already Have One) and DynamicPals.
 
-## Status: stage 3 of v1
+## Status: stage 4 of v1
 
-A schema now loads a settings struct from a JSONC document. Dotted keys,
-aliases, coercion and clamping arrive in stage 4; file writing, hot reload and
-the menu registry come later. See the roadmap.
+A schema loads a settings struct from a JSONC document, with dotted keys,
+aliases, coercion, clamping and pair invariants. Diagnostics arrive in stage 5;
+file writing, hot reload and the menu registry come later. See the roadmap.
 
 ```cpp
 #include <PalCfg/Schema.hpp>
@@ -44,6 +44,7 @@ Each applies to the preceding `.Field()`.
 | `.Label(text)` | Display name in a settings menu |
 | `.Help(text)` | Documentation. Emitted as `//` comments in the generated file; embedded newlines become separate comment lines |
 | `.Range(lo, hi)` | Numeric bounds. Clamped on read, and rendered as a slider |
+| `.CaseInsensitiveKeys()` | Schema-level: match every key without regard to case. May appear anywhere in the chain |
 | `.Alias(key)` | An older spelling of the key, still accepted on read, so a rename preserves a user's setting. Up to four |
 | `.KeepDefaultIfEmpty()` | An empty list in the file keeps the default. Per-field, because for some lists empty is a meaningful answer |
 | `.Hidden()` | Kept out of a settings menu. For port-time values such as reflection name lists |
@@ -76,6 +77,57 @@ A load starts from a freshly default-constructed struct, so deleting a key from
 the file restores that field's default. A field whose key is absent, or whose
 value its traits decline, keeps the value already there — one malformed field
 costs that field alone.
+
+### Keys
+
+A dotted key reads from nested objects to any depth, so `"activity.idleTasks"`
+finds `{"activity": {"idleTasks": [...]}}`. PerkyPals' three nested objects need
+no nested structs.
+
+An `.Alias()` answers only for a key that is absent, so a present primary key
+stays authoritative even when its value turns out unreadable.
+
+A missing or non-object link along a dotted path resolves to nothing, leaving the
+default standing.
+
+### Coercion
+
+Hand-edited files spell values loosely, so each type accepts what it reasonably
+can. dynamic-pals' `SafeGetInt`/`SafeGetDouble`/`SafeGetOptionalBool` and iaho's
+`IsTruthy` each solved this separately; this is the union of both.
+
+| Target | Also accepts |
+| --- | --- |
+| `bool` | `true`/`yes`/`on`/`1` and their negatives, case-insensitively, and any number as non-zero |
+| integrals | a numeric string, and a fractional number truncated toward zero |
+| `float`, `double` | a numeric string, including exponent form |
+| `std::string` | a number or a bool |
+| lists and sets | one comma- or semicolon-separated string, which is how iaho spelled its id lists |
+
+A partly-numeric string such as `"0.5x"` keeps the default, so a typo stays
+visible.
+
+### Pair invariants
+
+Two fields that bound one quantity share their modifiers, and can restore their
+own order:
+
+```cpp
+.FieldPair("onsetDelayMin", &Settings::OnsetDelayMin,
+           "onsetDelayMax", &Settings::OnsetDelayMax)
+    .Label("Onset delay")
+    .Range(0.0, 300.0)
+    .SwapIfInverted()
+```
+
+PerkyPals swapped these by hand after parsing. Declaring the invariant also tells
+a settings menu to draw one two-handled slider in place of two disconnected spin
+boxes.
+
+`.SwapIfInverted()` MUST follow a `.FieldPair()`, and it runs after every field is
+loaded, so it sees coerced and clamped values. Inference from a `Min`/`Max` name
+suffix is deliberately absent: silently reordering a user's numbers on implicit
+magic is the wrong kind of clever.
 
 ### Supported types
 
@@ -223,7 +275,7 @@ target_link_libraries(MyMod PRIVATE PalCfg::Core)
 | 1 ✅ | `Schema`, `FieldMeta`, `Flatten()` |
 | 2 ✅ | `IValueSource`, the nlohmann backend behind that seam, `Document`, and `SanitiseJsonc` |
 | 3 ✅ | `ValueTraits`, the `FieldOps` thunks, `LoadFields`, and a real UTF-8 ↔ UTF-16 converter |
-| 4 | Coercion across types, dotted-key nesting, clamping, aliases, case-insensitive keys, `FieldPair().SwapIfInverted()` |
+| 4 ✅ | Coercion across types, dotted-key nesting, clamping, aliases, case-insensitive keys, `FieldPair().SwapIfInverted()` |
 | 5 | Diagnostics and the two-tier error model: a bad field keeps its default, a bad document keeps the live settings |
 | later | The documented-file writer, hot reload, the Win32 platform layer, and the optional C-ABI registry that lets a settings menu enumerate every mod |
 

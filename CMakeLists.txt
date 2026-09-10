@@ -34,6 +34,7 @@ add_library(palcfg_core STATIC
     "src/core/Jsonc.cpp"
     "src/core/JsonBackend.cpp"
     "src/core/Utf.cpp"
+    "src/core/Coerce.cpp"
 )
 target_include_directories(palcfg_core PUBLIC
     "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>")

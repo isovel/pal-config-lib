@@ -12,6 +12,9 @@ add_executable(palcfg_tests
     DocumentTest.cpp
     UtfTest.cpp
     LoadTest.cpp
+    KeyResolutionTest.cpp
+    CoercionTest.cpp
+    FieldPairTest.cpp
 )
 target_link_libraries(palcfg_tests PRIVATE PalCfg::Core Catch2::Catch2WithMain)
 

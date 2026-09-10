@@ -42,8 +42,11 @@ namespace PalCfg
 
         constexpr Schema(const char* modId,
                          std::tuple<Ms T::*...> members,
-                         std::array<FieldMeta, Count> meta)
-            : m_modId(modId), m_members(members), m_meta(meta)
+                         std::array<FieldMeta, Count> meta,
+                         bool caseInsensitiveKeys,
+                         std::size_t lastSpan)
+            : m_modId(modId), m_members(members), m_meta(meta),
+              m_caseInsensitiveKeys(caseInsensitiveKeys), m_lastSpan(lastSpan)
         {
         }
 
@@ -55,12 +58,48 @@ namespace PalCfg
             for (std::size_t i = 0; i < Count; ++i) next[i] = m_meta[i];
             next[Count].key = key;
 
-            return Schema<T, Ms..., M>{
-                m_modId, std::tuple_cat(m_members, std::tuple<M T::*>{memberPtr}), next};
+            return Schema<T, Ms..., M>{m_modId,
+                                       std::tuple_cat(m_members, std::tuple<M T::*>{memberPtr}),
+                                       next,
+                                       m_caseInsensitiveKeys,
+                                       1};
+        }
+
+        // Two fields of one type that bound a single quantity. Modifiers that
+        // follow apply to both, and .SwapIfInverted() restores their order when a
+        // file has them the wrong way round - an invariant of the pair that
+        // .Range() cannot express. PerkyPals did this by hand after parsing.
+        template <class M>
+        constexpr auto FieldPair(const char* lowerKey,
+                                 M T::* lowerPtr,
+                                 const char* upperKey,
+                                 M T::* upperPtr) const -> Schema<T, Ms..., M, M>
+        {
+            std::array<FieldMeta, Count + 2> next{};
+            for (std::size_t i = 0; i < Count; ++i) next[i] = m_meta[i];
+
+            next[Count].key = lowerKey;
+            next[Count].pairPartner = Count + 1;
+            next[Count + 1].key = upperKey;
+
+            return Schema<T, Ms..., M, M>{
+                m_modId,
+                std::tuple_cat(m_members, std::tuple<M T::*, M T::*>{lowerPtr, upperPtr}),
+                next,
+                m_caseInsensitiveKeys,
+                2};
+        }
+
+        // MUST follow a .FieldPair().
+        constexpr Schema SwapIfInverted() const
+        {
+            auto meta = m_meta;
+            meta[Count - 2].swapIfInverted = true;
+            return Schema{m_modId, m_members, meta, m_caseInsensitiveKeys, m_lastSpan};
         }
 
         // Modifiers return the SAME type, so a long fluent chain costs no extra
-        // template instantiations - only .Field() grows the parameter pack.
+        // template instantiations - only .Field() and .FieldPair() grow the pack.
         constexpr Schema Label(const char* text) const
         {
             return WithLastField([&](FieldMeta& field) { field.label = text; });
@@ -106,6 +145,13 @@ namespace PalCfg
             return WithLastField([](FieldMeta& field) { field.advanced = true; });
         }
 
+        // Schema-level, so it may appear anywhere in the chain and applies to every
+        // field. dynamic-pals and iaho both lower-cased keys before matching.
+        constexpr Schema CaseInsensitiveKeys() const
+        {
+            return Schema{m_modId, m_members, m_meta, true, m_lastSpan};
+        }
+
         constexpr std::array<FieldRuntime, Count> Flatten() const
         {
             std::array<FieldRuntime, Count> out{};
@@ -116,20 +162,30 @@ namespace PalCfg
         constexpr const char* ModId() const { return m_modId; }
 
       private:
+        constexpr FieldMeta StampedMeta(std::size_t index) const
+        {
+            FieldMeta meta = m_meta[index];
+            meta.caseInsensitiveKeys = m_caseInsensitiveKeys;
+            return meta;
+        }
+
         template <class Fn>
         constexpr Schema WithLastField(Fn&& apply) const
         {
             static_assert(Count > 0, "a modifier needs a preceding .Field()");
 
+            // Applies across the whole of the last declaration, so a modifier
+            // after .FieldPair() reaches both of its fields.
             auto meta = m_meta;
-            apply(meta[Count - 1]);
-            return Schema{m_modId, m_members, meta};
+            for (std::size_t i = Count - m_lastSpan; i < Count; ++i) apply(meta[i]);
+
+            return Schema{m_modId, m_members, meta, m_caseInsensitiveKeys, m_lastSpan};
         }
 
         template <std::size_t... Is>
         constexpr void Fill(std::array<FieldRuntime, Count>& out, std::index_sequence<Is...>) const
         {
-            ((out[Is] = FieldRuntime{m_meta[Is],
+            ((out[Is] = FieldRuntime{StampedMeta(Is),
                                      &OpsFor<T, std::tuple_element_t<Is, std::tuple<Ms...>>>::kInstance,
                                      &std::get<Is>(m_members)}),
              ...);
@@ -138,5 +194,10 @@ namespace PalCfg
         const char* m_modId = nullptr;
         std::tuple<Ms T::*...> m_members{};
         std::array<FieldMeta, Count> m_meta{};
+        bool m_caseInsensitiveKeys = false;
+
+        // How many fields the most recent declaration added: one for .Field(), two
+        // for .FieldPair().
+        std::size_t m_lastSpan = 0;
     };
 } // namespace PalCfg

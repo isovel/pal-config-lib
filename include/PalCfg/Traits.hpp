@@ -18,6 +18,7 @@
 #include <utility>
 #include <vector>
 
+#include <PalCfg/Coerce.hpp>
 #include <PalCfg/Field.hpp>
 #include <PalCfg/Utf.hpp>
 #include <PalCfg/Value.hpp>
@@ -33,6 +34,19 @@ namespace PalCfg
     template <class M, class Enable = void>
     struct ValueTraits;
 
+    namespace Detail
+    {
+        // Declared ahead of the numeric specialisations, whose bodies are compiled
+        // where they sit because they are full specialisations.
+        constexpr double Clamp(double value, const FieldMeta& meta)
+        {
+            if (!meta.hasRange) return value;
+            if (value < meta.min) return meta.min;
+            if (value > meta.max) return meta.max;
+            return value;
+        }
+    } // namespace Detail
+
     template <>
     struct ValueTraits<bool>
     {
@@ -40,7 +54,7 @@ namespace PalCfg
 
         static bool Read(bool& out, const IValueSource& source, const FieldMeta&)
         {
-            return source.AsBool(out);
+            return Detail::CoerceBool(source, out);
         }
     };
 
@@ -50,13 +64,19 @@ namespace PalCfg
     {
         static constexpr Kind kKind = Kind::Int;
 
-        static bool Read(M& out, const IValueSource& source, const FieldMeta&)
+        static bool Read(M& out, const IValueSource& source, const FieldMeta& meta)
         {
             std::int64_t wide = 0;
-            if (!source.AsInt64(wide)) return false;
+            if (!Detail::CoerceInt64(source, wide)) return false;
+
+            if (meta.hasRange)
+            {
+                if (static_cast<double>(wide) < meta.min) wide = static_cast<std::int64_t>(meta.min);
+                if (static_cast<double>(wide) > meta.max) wide = static_cast<std::int64_t>(meta.max);
+            }
 
             // A value the target type cannot hold keeps the default, so a typo of
-            // one digit too many does not silently wrap.
+            // one digit too many avoids silently wrapping.
             if (wide < static_cast<std::int64_t>(std::numeric_limits<M>::min())) return false;
             if (wide > static_cast<std::int64_t>(std::numeric_limits<M>::max())) return false;
 
@@ -70,11 +90,12 @@ namespace PalCfg
     {
         static constexpr Kind kKind = Kind::Float;
 
-        static bool Read(float& out, const IValueSource& source, const FieldMeta&)
+        static bool Read(float& out, const IValueSource& source, const FieldMeta& meta)
         {
             double value = 0.0;
-            if (!source.AsDouble(value)) return false;
-            out = static_cast<float>(value);
+            if (!Detail::CoerceDouble(source, value)) return false;
+
+            out = static_cast<float>(Detail::Clamp(value, meta));
             return true;
         }
     };
@@ -84,9 +105,13 @@ namespace PalCfg
     {
         static constexpr Kind kKind = Kind::Double;
 
-        static bool Read(double& out, const IValueSource& source, const FieldMeta&)
+        static bool Read(double& out, const IValueSource& source, const FieldMeta& meta)
         {
-            return source.AsDouble(out);
+            double value = 0.0;
+            if (!Detail::CoerceDouble(source, value)) return false;
+
+            out = Detail::Clamp(value, meta);
+            return true;
         }
     };
 
@@ -97,7 +122,7 @@ namespace PalCfg
 
         static bool Read(std::string& out, const IValueSource& source, const FieldMeta&)
         {
-            return source.AsUtf8(out);
+            return Detail::CoerceUtf8(source, out);
         }
     };
 
@@ -109,7 +134,8 @@ namespace PalCfg
         static bool Read(std::wstring& out, const IValueSource& source, const FieldMeta&)
         {
             std::string utf8;
-            if (!source.AsUtf8(utf8)) return false;
+            if (!Detail::CoerceUtf8(source, utf8)) return false;
+
             out = Utf8ToWide(utf8);
             return true;
         }
@@ -122,18 +148,31 @@ namespace PalCfg
         template <class Element, class Emit>
         bool ReadElements(const IValueSource& source, const FieldMeta& meta, Emit&& emit)
         {
+            std::size_t accepted = 0;
+
+            const auto Accept = [&](const IValueSource& element) {
+                Element value{};
+                if (!ValueTraits<Element>::Read(value, element, meta)) return;
+                emit(std::move(value));
+                ++accepted;
+            };
+
+            if (source.IsString())
+            {
+                // One separated string stands in for a list, which is how iaho
+                // spelled its id lists.
+                std::string text;
+                if (!source.AsUtf8(text)) return false;
+
+                ForEachSeparatedToken(text, [&](std::string_view token) {
+                    WithStringSource(token, Accept);
+                });
+                return accepted > 0 || !meta.keepDefaultIfEmpty;
+            }
+
             if (!source.IsArray()) return false;
 
-            std::size_t accepted = 0;
-            for (std::size_t i = 0; i < source.Size(); ++i)
-            {
-                source.Element(i, [&](const IValueSource& element) {
-                    Element value{};
-                    if (!ValueTraits<Element>::Read(value, element, meta)) return;
-                    emit(std::move(value));
-                    ++accepted;
-                });
-            }
+            for (std::size_t i = 0; i < source.Size(); ++i) source.Element(i, Accept);
 
             // An empty result means the default stands or the emptiness is taken
             // at face value, per the field's own flag. PerkyPals needs both:
@@ -216,7 +255,7 @@ namespace PalCfg
                 // the schema spells "quiet".
                 for (const auto& [candidate, value] : EnumNames<M>::kValues)
                 {
-                    if (!EqualsIgnoringCase(name, candidate)) continue;
+                    if (!Detail::EqualsIgnoringCase(name, candidate)) continue;
                     out = value;
                     return true;
                 }
@@ -236,22 +275,6 @@ namespace PalCfg
             return false; // a number outside the enum keeps the default
         }
 
-      private:
-        static bool EqualsIgnoringCase(std::string_view a, std::string_view b)
-        {
-            if (a.size() != b.size()) return false;
-
-            for (std::size_t i = 0; i < a.size(); ++i)
-            {
-                if (ToLower(a[i]) != ToLower(b[i])) return false;
-            }
-            return true;
-        }
-
-        static constexpr char ToLower(char c)
-        {
-            return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
-        }
     };
 
     // The type-erased thunk for one (struct, member type) pair. Templated on the
@@ -270,6 +293,28 @@ namespace PalCfg
             return ValueTraits<M>::Read(static_cast<T*>(base)->*memberPtr, source, meta);
         }
 
-        static inline constexpr FieldOps kInstance{ValueTraits<M>::kKind, &Parse};
+        // The body is guarded because taking this function's address below
+        // instantiates it for every M, ordered or not.
+        static void SwapIfInverted(void* base, const void* lowerMemberPtr, const void* upperMemberPtr)
+        {
+            if constexpr (std::is_arithmetic_v<M>)
+            {
+                const auto lower = *static_cast<M T::* const*>(lowerMemberPtr);
+                const auto upper = *static_cast<M T::* const*>(upperMemberPtr);
+
+                T& target = *static_cast<T*>(base);
+                if (target.*lower <= target.*upper) return;
+
+                const M held = target.*lower;
+                target.*lower = target.*upper;
+                target.*upper = held;
+            }
+        }
+
+        // Ordering is what the swap needs, so types without it get no hook and
+        // .SwapIfInverted has nothing to call.
+        static constexpr auto kSwapHook = std::is_arithmetic_v<M> ? &SwapIfInverted : nullptr;
+
+        static inline constexpr FieldOps kInstance{ValueTraits<M>::kKind, &Parse, kSwapHook};
     };
 } // namespace PalCfg
