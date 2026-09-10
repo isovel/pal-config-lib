@@ -6,11 +6,12 @@ the JSON parser, the defaults, a documented-file writer and a settings-menu sche
 Extracted from three mods that each hand-rolled their own: PerkyPals, iaho
 (I Already Have One) and DynamicPals.
 
-## Status: stage 4 of v1
+## Status: v1 core complete
 
 A schema loads a settings struct from a JSONC document, with dotted keys,
-aliases, coercion, clamping and pair invariants. Diagnostics arrive in stage 5;
-file writing, hot reload and the menu registry come later. See the roadmap.
+aliases, coercion, clamping, pair invariants and diagnostics. File writing, hot
+reload, the Win32 platform layer and the menu registry come next. See the
+roadmap.
 
 ```cpp
 #include <PalCfg/Schema.hpp>
@@ -61,22 +62,59 @@ Exceeding four aliases is a compile error.
 ## Loading a struct
 
 ```cpp
-#include <PalCfg/Document.hpp>
 #include <PalCfg/Load.hpp>
 
 inline constexpr auto kFields = kSchema.Flatten();
 
-PalCfg::Document doc;
-if (!doc.Parse(std::move(text))) return;  // keep the settings already held
-
-Settings settings{};                      // member initialisers are the defaults
-PalCfg::LoadFields(kFields, doc.Root(), settings);
+PalCfg::CollectingSink sink;
+const PalCfg::LoadResult result = PalCfg::LoadFromText(kFields, text, settings, sink);
 ```
 
-A load starts from a freshly default-constructed struct, so deleting a key from
-the file restores that field's default. A field whose key is absent, or whose
-value its traits decline, keeps the value already there — one malformed field
-costs that field alone.
+`settings` is written only when the document parses, so it may arrive holding
+values that are already live. Loading fills a fresh struct, so deleting a key
+from the file restores that field's default.
+
+Drop the sink argument to ignore diagnostics, or call `LoadFields` with an
+already-parsed `Document` for finer control.
+
+### Two tiers of failure
+
+A document that cannot be parsed yields nothing, so the caller's struct is left
+untouched and one `Error` is reported. PerkyPals got this right by parsing into a
+local and assigning only on success; a reload that fails MUST keep the settings
+already running.
+
+A single field that cannot be read costs that field alone: it keeps the value
+already there, a `Warning` names it, and every other field loads. A typo in
+`arousalRate` must not cost a user their `idleActions` list.
+
+### Severities
+
+| Severity | Meaning | Examples |
+| --- | --- | --- |
+| `Note` | Worth knowing, nothing lost | a coercion that worked, a stray comma removed, a key nobody claims |
+| `Warning` | Something was discarded or altered | a field kept its default, a value was clamped |
+| `Error` | Nothing could be extracted | the document does not parse, or its root is not an object |
+
+A coercion that succeeded is deliberately a `Note`. Reading `"42"` as a number is
+what a hand-edited file looks like, and warning about it teaches users to ignore
+warnings.
+
+```
+WARN  [arousalRate]      7 is outside 0 to 1; using 1
+WARN  [arousalRate]      cannot read an object as this setting; keeping the default
+NOTE  [count]            read text as a whole number
+NOTE  [sanity.threshld]  not a setting this version knows; kept as it is
+ERROR []                 the document's root is not an object
+```
+
+A mod installs its own sink to route these. PerkyPals and dynamic-pals both send
+warnings and errors to an in-game toast alongside the log, and gate the
+informational stream behind a debug flag. That decision stays with the mod: this
+library never reads a mod's log settings.
+
+`LoadResult::unknownKeys` holds the dotted paths nobody claimed, so the writer
+can carry them forward and a downgrade still reads its own settings.
 
 ### Keys
 
@@ -155,7 +193,10 @@ struct PalCfg::EnumNames<LogVerbosity>
 ```
 
 A mod supports a type of its own by specialising `PalCfg::ValueTraits<MyType>`
-with `kKind` and `Read`. No registration, no inheritance.
+with `kKind` and a
+`Read(MyType&, const IValueSource&, const ReadContext&)`. No registration, no
+inheritance. `ReadContext` carries the field's metadata, its dotted key and the
+diagnostic sink, so later additions leave existing specialisations compiling.
 
 The specialisation MUST appear before the schema that uses the type.
 
@@ -277,8 +318,9 @@ target_link_libraries(MyMod PRIVATE PalCfg::Core)
 | 2 ✅ | `IValueSource`, the nlohmann backend behind that seam, `Document`, and `SanitiseJsonc` |
 | 3 ✅ | `ValueTraits`, the `FieldOps` thunks, `LoadFields`, and a real UTF-8 ↔ UTF-16 converter |
 | 4 ✅ | Coercion across types, dotted-key nesting, clamping, aliases, case-insensitive keys, `FieldPair().SwapIfInverted()` |
-| 5 | Diagnostics and the two-tier error model: a bad field keeps its default, a bad document keeps the live settings |
-| later | The documented-file writer, hot reload, the Win32 platform layer, and the optional C-ABI registry that lets a settings menu enumerate every mod |
+| 5 ✅ | Diagnostics and the two-tier error model, plus unknown-key capture |
+| next | The documented-file writer and `palcfg-gen`, so `config.default.json` becomes a build artifact |
+| later | Hot reload, the Win32 platform layer, and the optional C-ABI registry that lets a settings menu enumerate every mod |
 
 On-disk format is JSONC. Comments are load-bearing: the schema's `.Help()` text
 regenerates them, so a menu writing settings back preserves a config file's

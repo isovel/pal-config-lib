@@ -19,6 +19,7 @@
 #include <vector>
 
 #include <PalCfg/Coerce.hpp>
+#include <PalCfg/Diagnostics.hpp>
 #include <PalCfg/Field.hpp>
 #include <PalCfg/Utf.hpp>
 #include <PalCfg/Value.hpp>
@@ -34,27 +35,17 @@ namespace PalCfg
     template <class M, class Enable = void>
     struct ValueTraits;
 
-    namespace Detail
-    {
-        // Declared ahead of the numeric specialisations, whose bodies are compiled
-        // where they sit because they are full specialisations.
-        constexpr double Clamp(double value, const FieldMeta& meta)
-        {
-            if (!meta.hasRange) return value;
-            if (value < meta.min) return meta.min;
-            if (value > meta.max) return meta.max;
-            return value;
-        }
-    } // namespace Detail
 
     template <>
     struct ValueTraits<bool>
     {
         static constexpr Kind kKind = Kind::Bool;
 
-        static bool Read(bool& out, const IValueSource& source, const FieldMeta&)
+        static bool Read(bool& out, const IValueSource& source, const ReadContext& context)
         {
-            return Detail::CoerceBool(source, out);
+            if (!Detail::CoerceBool(source, out)) return false;
+            if (!source.IsBool()) Detail::NoteCoercion(context, source, "a bool");
+            return true;
         }
     };
 
@@ -64,16 +55,13 @@ namespace PalCfg
     {
         static constexpr Kind kKind = Kind::Int;
 
-        static bool Read(M& out, const IValueSource& source, const FieldMeta& meta)
+        static bool Read(M& out, const IValueSource& source, const ReadContext& context)
         {
             std::int64_t wide = 0;
             if (!Detail::CoerceInt64(source, wide)) return false;
+            if (!source.IsNumber()) Detail::NoteCoercion(context, source, "a whole number");
 
-            if (meta.hasRange)
-            {
-                if (static_cast<double>(wide) < meta.min) wide = static_cast<std::int64_t>(meta.min);
-                if (static_cast<double>(wide) > meta.max) wide = static_cast<std::int64_t>(meta.max);
-            }
+            wide = static_cast<std::int64_t>(Detail::Clamp(static_cast<double>(wide), context));
 
             // A value the target type cannot hold keeps the default, so a typo of
             // one digit too many avoids silently wrapping.
@@ -90,12 +78,13 @@ namespace PalCfg
     {
         static constexpr Kind kKind = Kind::Float;
 
-        static bool Read(float& out, const IValueSource& source, const FieldMeta& meta)
+        static bool Read(float& out, const IValueSource& source, const ReadContext& context)
         {
             double value = 0.0;
             if (!Detail::CoerceDouble(source, value)) return false;
+            if (!source.IsNumber()) Detail::NoteCoercion(context, source, "a number");
 
-            out = static_cast<float>(Detail::Clamp(value, meta));
+            out = static_cast<float>(Detail::Clamp(value, context));
             return true;
         }
     };
@@ -105,12 +94,13 @@ namespace PalCfg
     {
         static constexpr Kind kKind = Kind::Double;
 
-        static bool Read(double& out, const IValueSource& source, const FieldMeta& meta)
+        static bool Read(double& out, const IValueSource& source, const ReadContext& context)
         {
             double value = 0.0;
             if (!Detail::CoerceDouble(source, value)) return false;
+            if (!source.IsNumber()) Detail::NoteCoercion(context, source, "a number");
 
-            out = Detail::Clamp(value, meta);
+            out = Detail::Clamp(value, context);
             return true;
         }
     };
@@ -120,9 +110,11 @@ namespace PalCfg
     {
         static constexpr Kind kKind = Kind::String;
 
-        static bool Read(std::string& out, const IValueSource& source, const FieldMeta&)
+        static bool Read(std::string& out, const IValueSource& source, const ReadContext& context)
         {
-            return Detail::CoerceUtf8(source, out);
+            if (!Detail::CoerceUtf8(source, out)) return false;
+            if (!source.IsString()) Detail::NoteCoercion(context, source, "text");
+            return true;
         }
     };
 
@@ -131,10 +123,11 @@ namespace PalCfg
     {
         static constexpr Kind kKind = Kind::String;
 
-        static bool Read(std::wstring& out, const IValueSource& source, const FieldMeta&)
+        static bool Read(std::wstring& out, const IValueSource& source, const ReadContext& context)
         {
             std::string utf8;
             if (!Detail::CoerceUtf8(source, utf8)) return false;
+            if (!source.IsString()) Detail::NoteCoercion(context, source, "text");
 
             out = Utf8ToWide(utf8);
             return true;
@@ -146,13 +139,13 @@ namespace PalCfg
         // Shared by vector and set: reads every element that its own traits accept,
         // skipping the rest. One bad entry costs that entry alone.
         template <class Element, class Emit>
-        bool ReadElements(const IValueSource& source, const FieldMeta& meta, Emit&& emit)
+        bool ReadElements(const IValueSource& source, const ReadContext& context, Emit&& emit)
         {
             std::size_t accepted = 0;
 
             const auto Accept = [&](const IValueSource& element) {
                 Element value{};
-                if (!ValueTraits<Element>::Read(value, element, meta)) return;
+                if (!ValueTraits<Element>::Read(value, element, context)) return;
                 emit(std::move(value));
                 ++accepted;
             };
@@ -167,7 +160,9 @@ namespace PalCfg
                 ForEachSeparatedToken(text, [&](std::string_view token) {
                     WithStringSource(token, Accept);
                 });
-                return accepted > 0 || !meta.keepDefaultIfEmpty;
+
+                NoteCoercion(context, source, "a list");
+                return accepted > 0 || !context.meta.keepDefaultIfEmpty;
             }
 
             if (!source.IsArray()) return false;
@@ -178,7 +173,7 @@ namespace PalCfg
             // at face value, per the field's own flag. PerkyPals needs both:
             // most of its lists want the default back, while idleActions and
             // idleTasks treat empty as a real answer.
-            return accepted > 0 || !meta.keepDefaultIfEmpty;
+            return accepted > 0 || !context.meta.keepDefaultIfEmpty;
         }
     } // namespace Detail
 
@@ -187,10 +182,10 @@ namespace PalCfg
     {
         static constexpr Kind kKind = Kind::List;
 
-        static bool Read(std::vector<Element>& out, const IValueSource& source, const FieldMeta& meta)
+        static bool Read(std::vector<Element>& out, const IValueSource& source, const ReadContext& context)
         {
             std::vector<Element> parsed;
-            if (!Detail::ReadElements<Element>(source, meta,
+            if (!Detail::ReadElements<Element>(source, context,
                                               [&](Element value) { parsed.push_back(std::move(value)); }))
             {
                 return false;
@@ -208,10 +203,10 @@ namespace PalCfg
 
         using Set = std::unordered_set<Element, Hash, Equal, Alloc>;
 
-        static bool Read(Set& out, const IValueSource& source, const FieldMeta& meta)
+        static bool Read(Set& out, const IValueSource& source, const ReadContext& context)
         {
             Set parsed;
-            if (!Detail::ReadElements<Element>(source, meta,
+            if (!Detail::ReadElements<Element>(source, context,
                                               [&](Element value) { parsed.insert(std::move(value)); }))
             {
                 return false;
@@ -229,10 +224,10 @@ namespace PalCfg
     {
         static constexpr Kind kKind = Kind::Optional;
 
-        static bool Read(std::optional<Inner>& out, const IValueSource& source, const FieldMeta& meta)
+        static bool Read(std::optional<Inner>& out, const IValueSource& source, const ReadContext& context)
         {
             Inner value{};
-            if (!ValueTraits<Inner>::Read(value, source, meta)) return false;
+            if (!ValueTraits<Inner>::Read(value, source, context)) return false;
 
             out = std::move(value);
             return true;
@@ -244,7 +239,7 @@ namespace PalCfg
     {
         static constexpr Kind kKind = Kind::Enum;
 
-        static bool Read(M& out, const IValueSource& source, const FieldMeta&)
+        static bool Read(M& out, const IValueSource& source, const ReadContext& context)
         {
             if (source.IsString())
             {
@@ -269,7 +264,12 @@ namespace PalCfg
             {
                 (void)candidate;
                 if (static_cast<std::int64_t>(value) != ordinal) continue;
+
                 out = value;
+
+                // The name is this setting's canonical spelling, so arriving as a
+                // number is worth a note.
+                Detail::NoteCoercion(context, source, "a named value");
                 return true;
             }
             return false; // a number outside the enum keeps the default
@@ -287,10 +287,10 @@ namespace PalCfg
         static bool Parse(void* base,
                           const void* boundMemberPtr,
                           const IValueSource& source,
-                          const FieldMeta& meta)
+                          const ReadContext& context)
         {
             const auto memberPtr = *static_cast<M T::* const*>(boundMemberPtr);
-            return ValueTraits<M>::Read(static_cast<T*>(base)->*memberPtr, source, meta);
+            return ValueTraits<M>::Read(static_cast<T*>(base)->*memberPtr, source, context);
         }
 
         // The body is guarded because taking this function's address below

@@ -12,6 +12,7 @@
 namespace PalCfg
 {
     class IValueSource;
+    struct ReadContext;
 
     // What a field holds, for a settings menu deciding how to present it and for
     // the wire format's "kind" tag.
@@ -89,7 +90,7 @@ namespace PalCfg
         bool (*parse)(void* base,
                       const void* boundMemberPtr,
                       const IValueSource& source,
-                      const FieldMeta& meta) = nullptr;
+                      const ReadContext& context) = nullptr;
 
         // Exchanges two members of `base` when the lower holds more than the
         // upper. Null for types with no ordering, which is what makes
