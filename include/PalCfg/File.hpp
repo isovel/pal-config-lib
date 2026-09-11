@@ -7,6 +7,7 @@
 // regeneration that decides nothing never disturbs a timestamp - or, once hot
 // reload arrives, triggers itself.
 
+#include <cstdint>
 #include <string>
 #include <string_view>
 
@@ -25,6 +26,20 @@ namespace PalCfg
 
         bool Ok() const { return error.empty(); }
     };
+
+    // Enough of a file's identity to tell "nobody has touched this" cheaply. The
+    // content still decides whether a reload happens: a stamp only says whether
+    // the file is worth reading again.
+    struct FileStamp
+    {
+        bool exists = false;
+        std::uint64_t size = 0;
+        std::int64_t modified = 0;
+
+        bool operator==(const FileStamp&) const = default;
+    };
+
+    FileStamp StatFile(const std::string& path);
 
     // Writes through a temporary in the same directory, then renames, so a reader
     // sees either the whole old file or the whole new one.

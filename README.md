@@ -9,9 +9,9 @@ Extracted from three mods that each hand-rolled their own: PerkyPals, iaho
 ## Status: v1 core complete, with the writer
 
 A schema loads a settings struct from a JSONC document, with dotted keys,
-aliases, coercion, clamping, pair invariants and diagnostics, and renders one
-back out as a documented file. Hot reload, the Win32 platform layer and the menu
-registry come next. See the roadmap.
+aliases, coercion, clamping, pair invariants and diagnostics, renders one back
+out as a documented file, and keeps it live while the game runs. The Win32
+platform layer and the menu registry come next. See the roadmap.
 
 PerkyPals' real shipped `config.default.json` is checked in as a fixture and
 loads through a schema mirroring its `src/Config.cpp` field for field, reporting
@@ -304,6 +304,48 @@ A set renders sorted, since a hash set has no order of its own and a generated
 file must not churn between runs. A type whose `ValueTraits` declares no `Write`
 is absent from the generated file.
 
+## Keeping a file live
+
+```cpp
+#include <PalCfg/ConfigFile.hpp>
+
+PalCfg::ConfigFile<Settings, kFields.size()> g_config{kFields, ConfigPath()};
+
+void OnStart()
+{
+    g_config.SetSink(g_sink);
+    g_config.SetOnReload([](const Settings& settings) { ApplyHotkeys(settings); });
+    g_config.Load();
+}
+
+void OnTick()
+{
+    g_config.Tick(std::chrono::steady_clock::now());
+
+    const auto settings = g_config.Get();
+    Drive(settings->ArousalRate);
+}
+```
+
+`Get()` is safe from any thread and never returns a half-applied reload, since
+the live settings sit behind an atomic shared pointer. `Load()`, `Tick()` and
+`Save()` MUST all be called from one thread, which for a UE4SS mod is the game
+thread.
+
+`Tick()` polls at most once per interval, one second by default, and reads the
+file only when its size or timestamp has moved. The bytes are the last word: a
+rewrite that changed nothing is never a reload, so a mod saving its own file
+through `Save()` does not trigger itself, and neither does an editor writing an
+unchanged buffer.
+
+A reload that fails to parse keeps the settings already running and reports one
+`Error`. The failing text is remembered, so a file left broken is reported once
+rather than on every poll.
+
+DynamicPals polled at 1 Hz for the same reason this does: a watcher thread on a
+Windows handle delivers its notifications on a thread that must not touch the
+game.
+
 ## Design notes
 
 **No public header includes `json.hpp` or `Windows.h`.** PerkyPals kept nlohmann
@@ -375,7 +417,8 @@ target_link_libraries(MyMod PRIVATE PalCfg::Core)
 | 5 ✅ | Diagnostics and the two-tier error model, plus unknown-key capture |
 | gate ✅ | PerkyPals' shipped config loads to its documented values, with every field proven to read from the document |
 | 6 ✅ | The documented-file writer, `GenerateMain` and the CMake glue, so `config.default.json` is a build artifact |
-| next | Hot reload, the Win32 platform layer, and the optional C-ABI registry that lets a settings menu enumerate every mod |
+| 7 ✅ | `ConfigFile`: polled hot reload, an atomic live snapshot, and `Save()` that does not trigger itself |
+| next | The Win32 platform layer, and the optional C-ABI registry that lets a settings menu enumerate every mod |
 
 On-disk format is JSONC. Comments are load-bearing: the schema's `.Help()` text
 regenerates them, so a menu writing settings back preserves a config file's

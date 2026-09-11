@@ -23,6 +23,24 @@ namespace PalCfg
         return !file.bad();
     }
 
+    FileStamp StatFile(const std::string& path)
+    {
+        FileStamp stamp;
+
+        std::error_code code;
+        const auto status = fs::status(path, code);
+        if (code || !fs::is_regular_file(status)) return stamp;
+
+        stamp.exists = true;
+        stamp.size = static_cast<std::uint64_t>(fs::file_size(path, code));
+        if (code) stamp.size = 0;
+
+        const auto modified = fs::last_write_time(path, code);
+        if (!code) stamp.modified = modified.time_since_epoch().count();
+
+        return stamp;
+    }
+
     WriteFileResult WriteFileIfChanged(const std::string& path, std::string_view content)
     {
         WriteFileResult result;

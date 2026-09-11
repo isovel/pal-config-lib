@@ -4,6 +4,7 @@
 //
 // This target only has to COMPILE, so it carries no test cases.
 
+#include <PalCfg/ConfigFile.hpp>
 #include <PalCfg/Document.hpp>
 #include <PalCfg/Generate.hpp>
 #include <PalCfg/Jsonc.hpp>
@@ -37,5 +38,8 @@ namespace
         Probe probe;
         (void)PalCfg::LoadFields(kProbeFields, source, probe);
         (void)PalCfg::RenderDocument(kProbeFields, probe, source);
+
+        PalCfg::ConfigFile<Probe, kProbeFields.size()> file{kProbeFields, "probe.json"};
+        (void)file.Tick(PalCfg::ConfigFile<Probe, kProbeFields.size()>::Clock::now());
     }
 } // namespace
