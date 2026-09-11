@@ -13,6 +13,10 @@ aliases, coercion, clamping, pair invariants and diagnostics. File writing, hot
 reload, the Win32 platform layer and the menu registry come next. See the
 roadmap.
 
+PerkyPals' real shipped `config.default.json` is checked in as a fixture and
+loads through a schema mirroring its `src/Config.cpp` field for field, reporting
+nothing and leaving no key unclaimed.
+
 ```cpp
 #include <PalCfg/Schema.hpp>
 
@@ -319,6 +323,7 @@ target_link_libraries(MyMod PRIVATE PalCfg::Core)
 | 3 ✅ | `ValueTraits`, the `FieldOps` thunks, `LoadFields`, and a real UTF-8 ↔ UTF-16 converter |
 | 4 ✅ | Coercion across types, dotted-key nesting, clamping, aliases, case-insensitive keys, `FieldPair().SwapIfInverted()` |
 | 5 ✅ | Diagnostics and the two-tier error model, plus unknown-key capture |
+| gate ✅ | PerkyPals' shipped config loads to its documented values, with every field proven to read from the document |
 | next | The documented-file writer and `palcfg-gen`, so `config.default.json` becomes a build artifact |
 | later | Hot reload, the Win32 platform layer, and the optional C-ABI registry that lets a settings menu enumerate every mod |
 

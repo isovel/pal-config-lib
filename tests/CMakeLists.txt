@@ -16,8 +16,11 @@ add_executable(palcfg_tests
     CoercionTest.cpp
     FieldPairTest.cpp
     DiagnosticsTest.cpp
+    PerkyPalsFixtureTest.cpp
 )
 target_link_libraries(palcfg_tests PRIVATE PalCfg::Core Catch2::Catch2WithMain)
+target_compile_definitions(palcfg_tests PRIVATE
+    PALCFG_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 
 if(MSVC)
     target_compile_options(palcfg_tests PRIVATE /W4)

@@ -136,10 +136,21 @@ namespace PalCfg
 
     namespace Detail
     {
+        // Keeping a default is a success whose value happens to be unchanged.
+        // Collapsing it into "unreadable" would make the loader warn about a file
+        // that is perfectly correct - every list in PerkyPals' shipped config whose
+        // default is already empty arrives as [].
+        enum class ElementsOutcome
+        {
+            Assign,
+            KeepDefault,
+            Unreadable,
+        };
+
         // Shared by vector and set: reads every element that its own traits accept,
         // skipping the rest. One bad entry costs that entry alone.
         template <class Element, class Emit>
-        bool ReadElements(const IValueSource& source, const ReadContext& context, Emit&& emit)
+        ElementsOutcome ReadElements(const IValueSource& source, const ReadContext& context, Emit&& emit)
         {
             std::size_t accepted = 0;
 
@@ -150,30 +161,36 @@ namespace PalCfg
                 ++accepted;
             };
 
+            // An empty result either leaves the default standing or is taken at face
+            // value, per the field's own flag. PerkyPals needs both: most of its
+            // lists want the default back, while idleActions treats empty as a real
+            // answer.
+            const auto Outcome = [&] {
+                if (accepted > 0) return ElementsOutcome::Assign;
+                return context.meta.keepDefaultIfEmpty ? ElementsOutcome::KeepDefault
+                                                       : ElementsOutcome::Assign;
+            };
+
             if (source.IsString())
             {
                 // One separated string stands in for a list, which is how iaho
                 // spelled its id lists.
                 std::string text;
-                if (!source.AsUtf8(text)) return false;
+                if (!source.AsUtf8(text)) return ElementsOutcome::Unreadable;
 
                 ForEachSeparatedToken(text, [&](std::string_view token) {
                     WithStringSource(token, Accept);
                 });
 
                 NoteCoercion(context, source, "a list");
-                return accepted > 0 || !context.meta.keepDefaultIfEmpty;
+                return Outcome();
             }
 
-            if (!source.IsArray()) return false;
+            if (!source.IsArray()) return ElementsOutcome::Unreadable;
 
             for (std::size_t i = 0; i < source.Size(); ++i) source.Element(i, Accept);
 
-            // An empty result means the default stands or the emptiness is taken
-            // at face value, per the field's own flag. PerkyPals needs both:
-            // most of its lists want the default back, while idleActions and
-            // idleTasks treat empty as a real answer.
-            return accepted > 0 || !context.meta.keepDefaultIfEmpty;
+            return Outcome();
         }
     } // namespace Detail
 
@@ -185,13 +202,12 @@ namespace PalCfg
         static bool Read(std::vector<Element>& out, const IValueSource& source, const ReadContext& context)
         {
             std::vector<Element> parsed;
-            if (!Detail::ReadElements<Element>(source, context,
-                                              [&](Element value) { parsed.push_back(std::move(value)); }))
-            {
-                return false;
-            }
+            const auto outcome = Detail::ReadElements<Element>(
+                source, context, [&](Element value) { parsed.push_back(std::move(value)); });
 
-            out = std::move(parsed);
+            if (outcome == Detail::ElementsOutcome::Unreadable) return false;
+            if (outcome == Detail::ElementsOutcome::Assign) out = std::move(parsed);
+
             return true;
         }
     };
@@ -206,13 +222,12 @@ namespace PalCfg
         static bool Read(Set& out, const IValueSource& source, const ReadContext& context)
         {
             Set parsed;
-            if (!Detail::ReadElements<Element>(source, context,
-                                              [&](Element value) { parsed.insert(std::move(value)); }))
-            {
-                return false;
-            }
+            const auto outcome = Detail::ReadElements<Element>(
+                source, context, [&](Element value) { parsed.insert(std::move(value)); });
 
-            out = std::move(parsed);
+            if (outcome == Detail::ElementsOutcome::Unreadable) return false;
+            if (outcome == Detail::ElementsOutcome::Assign) out = std::move(parsed);
+
             return true;
         }
     };

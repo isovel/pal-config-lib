@@ -1,0 +1,209 @@
+{
+    // Morph targets driven by the arousal value, in order.
+    // One name is driven across the whole 0-1 range. With N names, name i owns
+    // the slice [i/N, (i+1)/N] and is driven 0-1 across it, so a staged model
+    // can list its stage keys from softest to hardest. Names the mesh does not
+    // have are skipped without affecting the others.
+    "morphTargets": ["Aroused"],
+
+    // Weight per second while rising. 0.08 is a full climb in ~12s before the
+    // per-pal multiplier is applied, so 8-25s across the multiplier range.
+    "arousalRate": 0.08,
+
+    // Seconds held at full before decay starts. Not scaled by the per-pal
+    // multiplier, so every pal holds for the same time. Does not apply to a
+    // gated base worker while its SAN is above the threshold - that holds
+    // indefinitely.
+    "holdDelay": 60.0,
+
+    // Weight per second while falling. 0.10 is a full fall in ~10s, so 7-20s
+    // across the multiplier range.
+    "decayRate": 0.10,
+
+    // Seconds a pal rests at zero before starting again. Re-rolled every cycle,
+    // so pals drift apart over time instead of settling into a fixed offset.
+    // This is the single biggest lever on how much is happening at once - the
+    // old 120s ceiling meant a pal could sit inert for two minutes a cycle.
+    "onsetDelayMin": 0.0,
+    "onsetDelayMax": 30.0,
+
+    // Per-pal speed scale, rolled once per pal. Applies to both rise and fall.
+    "rateMultiplierMin": 0.5,
+    "rateMultiplierMax": 1.5,
+
+    // The player character, driven alongside the pals off the same morph
+    // target names. The activity block below reaches it: fighting or working
+    // brings it down at once, and anything else - idle, sleeping, riding -
+    // runs the cycle and holds at full instead of timing out of the hold.
+    // SAN is a pal's parameter, so the sanity block never reaches it.
+    //
+    // Riding needs no rule of its own: a riding player is not in battle and
+    // holds no work action, so it reads idle. If a build gives it one, add
+    // that action to activity.idleActions.
+    //
+    // Hot-reloads. Turning it off mid-session zeroes the morph and drops the
+    // player from the registry within a second; turning it back on picks it up
+    // again at a random point in the cycle.
+    "player": {
+        "enabled": true
+    },
+
+    // Diagnostics. These hot-reload, so a subsystem can be turned off while
+    // the game is running to isolate a fault - no rebuild, no restart.
+    "debug": {
+        // Master switch for everything diagnostic: the Alt+P / Alt+I / Alt+O /
+        // Alt+L / Alt+U / Alt+K hotkeys, the reflection dump, the per-phase tick
+        // timing, and the whole informational log stream. Off here, so a build
+        // handed to someone else neither answers keystrokes nor narrates
+        // itself.
+        //
+        // Warnings and errors are never gated. If something fails, it says so
+        // on screen and in UE4SS.log whatever this is set to.
+        //
+        // Hot-reloads like everything else, so turning it on mid-session is
+        // enough to get the hotkeys back - no restart.
+        "enabled": false,
+
+        // Log each tick phase once a second. The last line before a crash
+        // names the subsystem that was running. Requires "enabled" above.
+        "trace": false,
+        // Functional kill-switches rather than diagnostics: these work
+        // regardless of "enabled", so a suspect subsystem can be shut off in
+        // a build that is otherwise silent.
+        "enableDriver": true,
+        "enableSanity": true,
+        "enableRegistry": true
+    },
+
+    "activity": {
+        // A pal that is fighting or working comes down regardless of anything
+        // else - its SAN, its phase, where it was in the cycle. The one
+        // exception is a follower being ridden: carrying the player is not
+        // work, so it keeps running its normal cycle.
+        //
+        // Applies to every pal, not just base workers.
+        "enabled": true,
+
+        // Every name below resolved on this build and is confirmed by the
+        // Alt+U reflection dump. They are still configurable so another build
+        // can be handled by editing this file rather than rebuilding - but a
+        // longer guess list is not free. It is a chance for a wrong name to
+        // resolve first and quietly measure something else, which is exactly
+        // what GetCurrentWorkSuitability did.
+
+        // A no-arg bool on the pal: true in combat. Because it is a bool, the
+        // numeric battleGetters/battleProperties below stay empty.
+        "fighting": ["GetBattleMode"],
+
+        // No boolean "is working" predicate exists here - taskObjects answers
+        // that question instead.
+        "working": [],
+
+        // No riding predicate on the pal either. PalUtility answers it the
+        // other way round: hand it the pal, get the rider back. Non-null means
+        // the pal is being ridden.
+        "riding": [],
+        "riderGetters": ["FindRiderByRidingActor"],
+
+        // Searched for accessors alongside the pal and its individual
+        // parameter. PalActionComponent is where the real answer lives.
+        "components": ["ActionComponent"],
+
+        // Checked before the enum getters and trusted over them once it
+        // resolves. Null means definitively idle.
+        "taskObjects": ["CurrentAction"],
+
+        // Non-null does NOT mean working. The action machine always has
+        // something running - a wait, a wander, a sleep - so an idle pal holds
+        // an action too, and only its identity tells the two apart. Any action
+        // whose name or class contains one of these substrings counts as idle
+        // (case-insensitive).
+        //
+        // Alt+P prints action=<name> for the nearest pal, so a new one is read
+        // off the log and added here - this hot-reloads, no rebuild, no
+        // restart.
+        //
+        // "Idle" covers the BP_ActionIdle* family, of which IdleInSpa is the
+        // one seen so far. Nothing that is actually work carries Idle in its
+        // name: the work actions are Mining, Harvesting, Watering, Feeding,
+        // TransportItem and GenerateEnergy_*. Kept as the family prefix rather
+        // than the one action, since a pal idling in a spa is not a special
+        // case of anything.
+        //
+        // DiscoveryLookat is NOT here, despite the name reading like a passive
+        // reaction: discovery is a pal actively searching for work. It is the
+        // start of the work loop, so it counts as work.
+        "idleActions": ["Idle"],
+
+        // GetCurrentActionType on PalActionComponent. Read every sample and
+        // shown as task=N on the Alt+P status line. Returns EPalActionType.
+        "taskGetters": ["GetCurrentActionType"],
+        "taskProperties": [],
+
+        // Task enum values that count as idle. A pal is working only if it
+        // holds an action AND its task is not one of these - so adding a value
+        // here is a veto, and it hot-reloads.
+        //
+        // Taken from EPalActionType in the CXXHeaderDump rather than from
+        // observation: the enum has 116 values and only twelve had ever shown
+        // up in a log. Everything below is rest, eating, or being socialised
+        // with. Everything omitted - work, combat, capture, damage reactions,
+        // riding - is activity the pal should come down from.
+        //
+        //    0  None                   no action at all
+        //    1  Sleep                  rest
+        //    2  WakeUp                 rest
+        //    6  Eat                    rest
+        //   38  Happy                  reaction, not work
+        //   39  IdleInSpa              also vetoed by idleActions below
+        //   54  WaitLoadingAction      placeholder while the pal streams in
+        //   55  HumanPetting           social, initiated at the pal
+        //   56  PalPetting             social
+        //   57  Talk                   social
+        //   58  Listen_A               social
+        //   59  Listen_B               social
+        //   60  ChairSit               sitting
+        //   61  ChairSitMeal           sitting
+        //   62  ChairSitDrink          sitting
+        //   63  ChairSitMeat           sitting
+        //   64  GroundSit              sitting
+        //   77  PalRandomRest          idling in the world
+        //   78  PalRandomRest_BaseCamp idling at a base
+        //
+        // For the record, the work values on the other side of the line, all
+        // of them observed: 21 DiscoverySomething (searching for work - the
+        // start of the loop, so it counts), 28 Mining, 29 Feeding,
+        // 31 Watering, 33 Harvest, 35 GenerateEnergyFire,
+        // 36 GenerateEnergyElectric, 41 TransportItem, 42 Cool.
+        //
+        // Note the enum names differ from the action=<name> the log prints -
+        // that name comes from the UPalActionBase object, not the enum, so
+        // action=DiscoveryLookat is EPalActionType::DiscoverySomething (21).
+        // The Alt+P line still names any value that turns up unlisted.
+        "idleTasks": [0, 1, 2, 6, 38, 39, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 77, 78],
+
+        // Fallbacks, consulted only if the accessor above them fails to
+        // resolve on some other build. Inert here.
+        "battleGetters": [],
+        "battleProperties": [],
+        "peacefulBattleModes": [0]
+    },
+
+    "sanity": {
+        // Base camp workers only: arousal rises while SAN is above the
+        // threshold and falls once it drops below. At full it stays there for
+        // as long as SAN holds up, ignoring holdDelay. Wild and party pals
+        // always run the plain timer cycle.
+        "enabled": true,
+        "threshold": 0.8,
+
+        // Confirmed on this build via the Alt+U reflection dump:
+        // PalIndividualCharacterParameter exposes SAN only as a getter pair,
+        // with no readable property. Same rule as the activity lists - only
+        // what actually resolved is listed, so nothing else can win the probe.
+        "getters": ["GetSanityValue"],
+        "maxGetters": ["GetMaxSanityValue"],
+        "properties": [],
+        "maxProperties": []
+    }
+}
