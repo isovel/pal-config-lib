@@ -29,20 +29,21 @@ namespace PalCfg
         std::size_t indentWidth = 4;
     };
 
+    // The emit helpers a ValueTraits::Write needs, defined in src/core/Write.cpp so
+    // escaping and number formatting stay out of every consumer's translation unit.
+
+    // Appends `text` as a quoted JSON string, escaping what JSON requires.
+    void AppendJsonString(std::string& out, std::string_view text);
+
+    // Appends the shortest form that reads back as the same value. A whole number
+    // gains a trailing ".0" when `fractional`, so a float field stays recognisably
+    // a float in the file.
+    void AppendJsonNumber(std::string& out, double value, bool fractional);
+
+    void AppendJsonNumber(std::string& out, float value);
+
     namespace Detail
     {
-        // Emit helpers, defined in src/core/Write.cpp so escaping and number
-        // formatting stay out of every consumer's translation unit.
-
-        // Appends `text` as a quoted JSON string, escaping what JSON requires.
-        void AppendJsonString(std::string& out, std::string_view text);
-
-        // Appends the shortest form that reads back as the same value. A whole
-        // number gains a trailing ".0" when `fractional`, so a float field stays
-        // recognisably a float in the file.
-        void AppendJsonNumber(std::string& out, double value, bool fractional);
-
-        void AppendJsonNumber(std::string& out, float value);
 
         // Appends `text` as // comment lines, one per embedded newline, each
         // prefixed with `indent`. An empty line stays empty, so help text can
@@ -52,10 +53,6 @@ namespace PalCfg
         // Marks a key carried forward from the file being replaced.
         inline constexpr const char* kCarriedNote =
             "Kept from the previous file; not a setting this version knows.";
-    } // namespace Detail
-
-    namespace Detail
-    {
         // One pass per object level. A dotted key such as "activity.idleTasks"
         // opens its object the first time that prefix is seen, and declaration
         // order decides where each key and each object lands.

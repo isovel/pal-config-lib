@@ -6,7 +6,7 @@
 #include <cstdlib>
 #include <limits>
 
-namespace PalCfg::Detail
+namespace PalCfg
 {
     namespace
     {
@@ -220,4 +220,4 @@ namespace PalCfg::Detail
             start = end + 1;
         }
     }
-} // namespace PalCfg::Detail
+} // namespace PalCfg

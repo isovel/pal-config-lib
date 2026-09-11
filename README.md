@@ -6,7 +6,7 @@ the JSON parser, the defaults, a documented-file writer and a settings-menu sche
 Extracted from three mods that each hand-rolled their own: PerkyPals, iaho
 (I Already Have One) and DynamicPals.
 
-## Status: v1 core complete, with the writer
+## Status: v1 complete
 
 A schema loads a settings struct from a JSONC document, with dotted keys,
 aliases, coercion, clamping, pair invariants and diagnostics, renders one back
@@ -197,11 +197,77 @@ struct PalCfg::EnumNames<LogVerbosity>
 };
 ```
 
-A mod supports a type of its own by specialising `PalCfg::ValueTraits<MyType>`
-with `kKind` and a
-`Read(MyType&, const IValueSource&, const ReadContext&)`. No registration, no
-inheritance. `ReadContext` carries the field's metadata, its dotted key and the
-diagnostic sink, so later additions leave existing specialisations compiling.
+A mod supports a type of its own by specialising `PalCfg::ValueTraits`. No
+registration, no inheritance. `tests/CustomTraitTest.cpp` keeps this example
+compiling:
+
+```cpp
+struct Hotkey
+{
+    bool alt = false;
+    bool ctrl = false;
+    char key = '\0';
+};
+
+template <>
+struct PalCfg::ValueTraits<Hotkey>
+{
+    static constexpr PalCfg::Kind kKind = PalCfg::Kind::String;
+
+    static bool Read(Hotkey& out, const PalCfg::IValueSource& source, const PalCfg::ReadContext&)
+    {
+        std::string text;
+        if (!PalCfg::CoerceUtf8(source, text)) return false;
+
+        Hotkey parsed;
+        std::size_t at = 0;
+        while (at < text.size())
+        {
+            const auto plus = text.find('+', at);
+            const std::string_view part{text.data() + at, (plus == std::string::npos ? text.size() : plus) - at};
+
+            if (PalCfg::EqualsIgnoringCase(part, "alt")) parsed.alt = true;
+            else if (PalCfg::EqualsIgnoringCase(part, "ctrl")) parsed.ctrl = true;
+            else if (part.size() == 1) parsed.key = static_cast<char>(std::toupper(part.front()));
+            else return false;
+
+            if (plus == std::string::npos) break;
+            at = plus + 1;
+        }
+
+        if (parsed.key == '\0') return false;
+
+        out = parsed;
+        return true;
+    }
+
+    static void Write(const Hotkey& value, std::string& out)
+    {
+        std::string text;
+        if (value.ctrl) text += "Ctrl+";
+        if (value.alt) text += "Alt+";
+        text += value.key;
+
+        PalCfg::AppendJsonString(out, text);
+    }
+};
+```
+
+`"ctrl+alt+k"` loads as `{ctrl, alt, 'K'}`, `"Meta+Q"` keeps the default and
+draws a `Warning`, and the generated file spells it `"Ctrl+Alt+K"`.
+
+The contract:
+
+| Member | Obligation |
+| --- | --- |
+| `kKind` | The `Kind` a settings menu presents it as. REQUIRED |
+| `Read` | Returns `false` to keep the default; the loader reports the warning. MUST leave `out` untouched on `false`. REQUIRED |
+| `Write` | Appends a JSON literal. OPTIONAL: without it the field is absent from a generated file |
+
+`ReadContext` carries the field's metadata, its dotted key and the diagnostic
+sink, so a trait can report through `context.diag` and later additions leave
+existing specialisations compiling. `Coerce.hpp` is the toolkit the built-in
+traits use, and `AppendJsonString` / `AppendJsonNumber` do the escaping.
 
 The specialisation MUST appear before the schema that uses the type.
 
@@ -238,8 +304,8 @@ doc.Root().Child("arousalRate", [&](const PalCfg::IValueSource& value) {
 
 `Child()` and `Element()` take a visitor, so no node handle escapes the seam and
 a borrowed node cannot outlive its visit. Each `AsX` reports only what the node
-naturally holds and leaves its output alone otherwise; cross-type coercion
-arrives with `ValueTraits` in stage 3.
+naturally holds and leaves its output alone otherwise; cross-type coercion is
+`ValueTraits`' job.
 
 ### Tolerating hand-edited files
 
@@ -441,6 +507,31 @@ compiled there but never executed, so its two Win32 calls MUST be exercised on a
 real Windows host before a release. You MUST run the suite under
 MSVC before tagging a release. Every compile-time claim is a `static_assert`, so
 a divergence fails the build loudly.
+
+## Headers
+
+| Header | Holds |
+| --- | --- |
+| `Schema.hpp` | `Schema<T>` builder, `Flatten()` |
+| `Field.hpp` | `FieldMeta`, `FieldOps`, `FieldRuntime`, `Kind` |
+| `Traits.hpp` | `ValueTraits`, `EnumNames`, `Writable` |
+| `Load.hpp` | `LoadFromText`, `LoadFields` |
+| `Diagnostics.hpp` | `Severity`, `Diagnostic`, `IDiagnosticSink`, `NullSink`, `CollectingSink`, `ReadContext`, `LoadResult` |
+| `LogSink.hpp` | `CallbackSink`, `FormatDiagnostic` |
+| `Coerce.hpp` | `CoerceBool` / `CoerceInt64` / `CoerceDouble` / `CoerceUtf8`, `EqualsIgnoringCase`, `ForEachSeparatedToken`, `WithStringSource` |
+| `Write.hpp` | `RenderDocument`, `WriteOptions`, `AppendJsonString`, `AppendJsonNumber` |
+| `Generate.hpp` | `GenerateFile`, `GenerateMain`, `GenerateResult` |
+| `ConfigFile.hpp` | `ConfigFile<T, N>` |
+| `File.hpp` | `WriteFileIfChanged`, `ReadFileText`, `StatFile`, `FileStamp` |
+| `Paths.hpp` | `ResolveAgainst` |
+| `Win32.hpp` | `ModuleDirectory`, `ModuleRelativePath` |
+| `Document.hpp` | `Document`, `ParseError` |
+| `Value.hpp` | `IValueSource` |
+| `Jsonc.hpp` | `SanitiseJsonc`, `SanitiseResult` |
+| `Utf.hpp` | `Utf8ToWide`, `WideToUtf8` |
+| `Keys.hpp` | Internal: dotted-key resolution shared by the loader and writer |
+
+Anything in `PalCfg::Detail` is internal and may change without notice.
 
 ## Consuming it
 

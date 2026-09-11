@@ -24,6 +24,7 @@ add_executable(palcfg_tests
     ConfigFileTest.cpp
     LogSinkTest.cpp
     PathsTest.cpp
+    CustomTraitTest.cpp
 )
 target_link_libraries(palcfg_tests PRIVATE PalCfg::Core Catch2::Catch2WithMain)
 set(PALCFG_GENERATED_CONFIG "${CMAKE_CURRENT_BINARY_DIR}/example.config.json")

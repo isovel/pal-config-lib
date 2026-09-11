@@ -51,7 +51,7 @@ namespace PalCfg
 
         static bool Read(bool& out, const IValueSource& source, const ReadContext& context)
         {
-            if (!Detail::CoerceBool(source, out)) return false;
+            if (!CoerceBool(source, out)) return false;
             if (!source.IsBool()) Detail::NoteCoercion(context, source, "a bool");
             return true;
         }
@@ -68,7 +68,7 @@ namespace PalCfg
         static bool Read(M& out, const IValueSource& source, const ReadContext& context)
         {
             std::int64_t wide = 0;
-            if (!Detail::CoerceInt64(source, wide)) return false;
+            if (!CoerceInt64(source, wide)) return false;
             if (!source.IsNumber()) Detail::NoteCoercion(context, source, "a whole number");
 
             wide = static_cast<std::int64_t>(Detail::Clamp(static_cast<double>(wide), context));
@@ -84,7 +84,7 @@ namespace PalCfg
 
         static void Write(const M& value, std::string& out)
         {
-            Detail::AppendJsonNumber(out, static_cast<double>(value), false);
+            AppendJsonNumber(out, static_cast<double>(value), false);
         }
     };
 
@@ -96,14 +96,14 @@ namespace PalCfg
         static bool Read(float& out, const IValueSource& source, const ReadContext& context)
         {
             double value = 0.0;
-            if (!Detail::CoerceDouble(source, value)) return false;
+            if (!CoerceDouble(source, value)) return false;
             if (!source.IsNumber()) Detail::NoteCoercion(context, source, "a number");
 
             out = static_cast<float>(Detail::Clamp(value, context));
             return true;
         }
 
-        static void Write(const float& value, std::string& out) { Detail::AppendJsonNumber(out, value); }
+        static void Write(const float& value, std::string& out) { AppendJsonNumber(out, value); }
     };
 
     template <>
@@ -114,7 +114,7 @@ namespace PalCfg
         static bool Read(double& out, const IValueSource& source, const ReadContext& context)
         {
             double value = 0.0;
-            if (!Detail::CoerceDouble(source, value)) return false;
+            if (!CoerceDouble(source, value)) return false;
             if (!source.IsNumber()) Detail::NoteCoercion(context, source, "a number");
 
             out = Detail::Clamp(value, context);
@@ -123,7 +123,7 @@ namespace PalCfg
 
         static void Write(const double& value, std::string& out)
         {
-            Detail::AppendJsonNumber(out, value, true);
+            AppendJsonNumber(out, value, true);
         }
     };
 
@@ -134,14 +134,14 @@ namespace PalCfg
 
         static bool Read(std::string& out, const IValueSource& source, const ReadContext& context)
         {
-            if (!Detail::CoerceUtf8(source, out)) return false;
+            if (!CoerceUtf8(source, out)) return false;
             if (!source.IsString()) Detail::NoteCoercion(context, source, "text");
             return true;
         }
 
         static void Write(const std::string& value, std::string& out)
         {
-            Detail::AppendJsonString(out, value);
+            AppendJsonString(out, value);
         }
     };
 
@@ -153,7 +153,7 @@ namespace PalCfg
         static bool Read(std::wstring& out, const IValueSource& source, const ReadContext& context)
         {
             std::string utf8;
-            if (!Detail::CoerceUtf8(source, utf8)) return false;
+            if (!CoerceUtf8(source, utf8)) return false;
             if (!source.IsString()) Detail::NoteCoercion(context, source, "text");
 
             out = Utf8ToWide(utf8);
@@ -162,7 +162,7 @@ namespace PalCfg
 
         static void Write(const std::wstring& value, std::string& out)
         {
-            Detail::AppendJsonString(out, WideToUtf8(value));
+            AppendJsonString(out, WideToUtf8(value));
         }
     };
 
@@ -350,7 +350,7 @@ namespace PalCfg
                 // the schema spells "quiet".
                 for (const auto& [candidate, value] : EnumNames<M>::kValues)
                 {
-                    if (!Detail::EqualsIgnoringCase(name, candidate)) continue;
+                    if (!EqualsIgnoringCase(name, candidate)) continue;
                     out = value;
                     return true;
                 }
@@ -382,11 +382,11 @@ namespace PalCfg
             for (const auto& [candidate, known] : EnumNames<M>::kValues)
             {
                 if (known != value) continue;
-                Detail::AppendJsonString(out, candidate);
+                AppendJsonString(out, candidate);
                 return;
             }
 
-            Detail::AppendJsonNumber(out, static_cast<double>(value), false);
+            AppendJsonNumber(out, static_cast<double>(value), false);
         }
     };
 

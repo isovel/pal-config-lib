@@ -5,7 +5,7 @@
 #include <cstdio>
 #include <system_error>
 
-namespace PalCfg::Detail
+namespace PalCfg
 {
     namespace
     {
@@ -33,6 +33,26 @@ namespace PalCfg::Detail
         }
     } // namespace
 
+    namespace Detail
+    {
+    void AppendComment(std::string& out, std::string_view text, std::string_view indent)
+    {
+        for (;;)
+        {
+            const auto newline = text.find('\n');
+            const std::string_view line = text.substr(0, newline);
+
+            out += indent;
+            out += line.empty() ? "//" : "// ";
+            out += line;
+            out += '\n';
+
+            if (newline == std::string_view::npos) return;
+            text = text.substr(newline + 1);
+        }
+    }
+    } // namespace Detail
+
     void AppendJsonString(std::string& out, std::string_view text)
     {
         out += '"';
@@ -58,22 +78,6 @@ namespace PalCfg::Detail
         out += '"';
     }
 
-    void AppendComment(std::string& out, std::string_view text, std::string_view indent)
-    {
-        for (;;)
-        {
-            const auto newline = text.find('\n');
-            const std::string_view line = text.substr(0, newline);
-
-            out += indent;
-            out += line.empty() ? "//" : "// ";
-            out += line;
-            out += '\n';
-
-            if (newline == std::string_view::npos) return;
-            text = text.substr(newline + 1);
-        }
-    }
 
     void AppendJsonNumber(std::string& out, double value, bool fractional)
     {

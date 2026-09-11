@@ -8,6 +8,9 @@
 //
 // Declared here and defined in src/core/Coerce.cpp, so the parsing lives in the
 // static library and every consumer's translation unit stays free of it.
+//
+// These are public: a mod specialising ValueTraits for a type of its own needs
+// the same loose reading the built-in traits get.
 
 #include <cstdint>
 #include <functional>
@@ -16,7 +19,7 @@
 
 #include <PalCfg/Value.hpp>
 
-namespace PalCfg::Detail
+namespace PalCfg
 {
     // Each returns false when nothing sensible can be read, leaving `out` alone.
     bool CoerceBool(const IValueSource& source, bool& out);
@@ -34,4 +37,4 @@ namespace PalCfg::Detail
     // spelled its id lists this way, so its config.ini values load verbatim.
     void ForEachSeparatedToken(std::string_view text,
                                const std::function<void(std::string_view)>& visit);
-} // namespace PalCfg::Detail
+} // namespace PalCfg
