@@ -9,7 +9,10 @@
 #include <PalCfg/Generate.hpp>
 #include <PalCfg/Jsonc.hpp>
 #include <PalCfg/Load.hpp>
+#include <PalCfg/LogSink.hpp>
+#include <PalCfg/Paths.hpp>
 #include <PalCfg/Schema.hpp>
+#include <PalCfg/Win32.hpp>
 #include <PalCfg/Value.hpp>
 
 namespace
@@ -38,6 +41,10 @@ namespace
         Probe probe;
         (void)PalCfg::LoadFields(kProbeFields, source, probe);
         (void)PalCfg::RenderDocument(kProbeFields, probe, source);
+
+        PalCfg::CallbackSink log{[](PalCfg::Severity, const std::string&) {}};
+        log.Report({PalCfg::Severity::Note, "value", "read"});
+        (void)PalCfg::ResolveAgainst("dlls", "../config.json");
 
         PalCfg::ConfigFile<Probe, kProbeFields.size()> file{kProbeFields, "probe.json"};
         (void)file.Tick(PalCfg::ConfigFile<Probe, kProbeFields.size()>::Clock::now());

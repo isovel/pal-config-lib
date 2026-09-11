@@ -38,7 +38,13 @@ add_library(palcfg_core STATIC
     "src/core/Diagnostics.cpp"
     "src/core/Write.cpp"
     "src/core/File.cpp"
+    "src/core/LogSink.cpp"
+    "src/core/Paths.cpp"
 )
+if(WIN32)
+    target_sources(palcfg_core PRIVATE "src/win32/Module.cpp")
+endif()
+
 target_include_directories(palcfg_core PUBLIC
     "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>")
 # PRIVATE: json.hpp is an implementation detail of this library.

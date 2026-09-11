@@ -10,8 +10,9 @@ Extracted from three mods that each hand-rolled their own: PerkyPals, iaho
 
 A schema loads a settings struct from a JSONC document, with dotted keys,
 aliases, coercion, clamping, pair invariants and diagnostics, renders one back
-out as a documented file, and keeps it live while the game runs. The Win32
-platform layer and the menu registry come next. See the roadmap.
+out as a documented file, and keeps it live while the game runs. A mod finds its
+own config beside its DLL and routes diagnostics into its own log. The menu
+registry comes next. See the roadmap.
 
 PerkyPals' real shipped `config.default.json` is checked in as a fixture and
 loads through a schema mirroring its `src/Config.cpp` field for field, reporting
@@ -346,6 +347,49 @@ DynamicPals polled at 1 Hz for the same reason this does: a watcher thread on a
 Windows handle delivers its notifications on a thread that must not touch the
 game.
 
+## Fitting into a mod
+
+### Finding the file
+
+```cpp
+#include <PalCfg/Win32.hpp>
+
+std::string path;
+PalCfg::ModuleRelativePath(reinterpret_cast<const void*>(&OnStart), "../config.json", path);
+```
+
+The address identifies the DLL it lives in, so the path comes from the mod's own
+module rather than from a working directory or the engine. That answers before
+`on_unreal_init` and needs no reflection, which is how PerkyPals resolves its
+config today.
+
+`src/win32/Module.cpp` is the only Windows-only source, and `Windows.h` stays
+inside it. `ResolveAgainst` is the portable half and treats a drive letter as
+absolute on every host, so a generator tool built for Linux still handles a
+Windows path correctly.
+
+### Routing the diagnostics
+
+```cpp
+#include <PalCfg/LogSink.hpp>
+
+PalCfg::CallbackSink sink{[](PalCfg::Severity severity, const std::string& line) {
+    Output::send<LogLevel::Warning>(STR("{}\n"), PalCfg::Utf8ToWide(line));
+    if (severity >= PalCfg::Severity::Warning) Toast(line);
+}};
+
+sink.SetMinimumSeverity(g_debug ? PalCfg::Severity::Note : PalCfg::Severity::Warning);
+```
+
+`FormatDiagnostic` puts the key in a fixed column, so a run of messages reads as
+a table:
+
+```
+WARN  [arousalRate]          7 is outside 0 to 1; using 1
+NOTE  [count]                read text as a whole number
+ERROR []                     the document's root is not an object
+```
+
 ## Design notes
 
 **No public header includes `json.hpp` or `Windows.h`.** PerkyPals kept nlohmann
@@ -392,7 +436,9 @@ consumed via `add_subdirectory`.
 Verified on clang 19 (Linux), g++ 12 (Linux), and clang-cl 19 cross-compiling to
 `x86_64-pc-windows-msvc` against the Microsoft STL via
 [xwin](https://github.com/Jake-Shadle/xwin). MSVC's own front-end remains
-untested, as this environment has no Windows host. You MUST run the suite under
+untested, as this environment has no Windows host. `src/win32/Module.cpp` is
+compiled there but never executed, so its two Win32 calls MUST be exercised on a
+real Windows host before a release. You MUST run the suite under
 MSVC before tagging a release. Every compile-time claim is a `static_assert`, so
 a divergence fails the build loudly.
 
@@ -418,7 +464,8 @@ target_link_libraries(MyMod PRIVATE PalCfg::Core)
 | gate ✅ | PerkyPals' shipped config loads to its documented values, with every field proven to read from the document |
 | 6 ✅ | The documented-file writer, `GenerateMain` and the CMake glue, so `config.default.json` is a build artifact |
 | 7 ✅ | `ConfigFile`: polled hot reload, an atomic live snapshot, and `Save()` that does not trigger itself |
-| next | The Win32 platform layer, and the optional C-ABI registry that lets a settings menu enumerate every mod |
+| 8 ✅ | The Win32 platform layer: module-relative paths and a formatting log sink |
+| next | The optional C-ABI registry that lets a settings menu enumerate every mod |
 
 On-disk format is JSONC. Comments are load-bearing: the schema's `.Help()` text
 regenerates them, so a menu writing settings back preserves a config file's
