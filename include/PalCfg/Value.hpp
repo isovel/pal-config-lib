@@ -54,7 +54,8 @@ namespace PalCfg
         // Member keys of an object, in document order. Empty for other types.
         virtual void ForEachKey(const std::function<void(std::string_view)>& visit) const = 0;
 
-        // Serialised form of this subtree, for the menu's JSON-string wire format.
+        // Serialised form of this subtree, for the menu's JSON-string wire
+        // format. Replaces `out`.
         virtual void Dump(std::string& out) const = 0;
     };
 } // namespace PalCfg

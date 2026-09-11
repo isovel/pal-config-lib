@@ -5,7 +5,9 @@
 // This target only has to COMPILE, so it carries no test cases.
 
 #include <PalCfg/Document.hpp>
+#include <PalCfg/Generate.hpp>
 #include <PalCfg/Jsonc.hpp>
+#include <PalCfg/Load.hpp>
 #include <PalCfg/Schema.hpp>
 #include <PalCfg/Value.hpp>
 
@@ -31,5 +33,9 @@ namespace
 
         std::string text = "{}";
         (void)PalCfg::SanitiseJsonc(text);
+
+        Probe probe;
+        (void)PalCfg::LoadFields(kProbeFields, source, probe);
+        (void)PalCfg::RenderDocument(kProbeFields, probe, source);
     }
 } // namespace

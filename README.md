@@ -6,12 +6,12 @@ the JSON parser, the defaults, a documented-file writer and a settings-menu sche
 Extracted from three mods that each hand-rolled their own: PerkyPals, iaho
 (I Already Have One) and DynamicPals.
 
-## Status: v1 core complete
+## Status: v1 core complete, with the writer
 
 A schema loads a settings struct from a JSONC document, with dotted keys,
-aliases, coercion, clamping, pair invariants and diagnostics. File writing, hot
-reload, the Win32 platform layer and the menu registry come next. See the
-roadmap.
+aliases, coercion, clamping, pair invariants and diagnostics, and renders one
+back out as a documented file. Hot reload, the Win32 platform layer and the menu
+registry come next. See the roadmap.
 
 PerkyPals' real shipped `config.default.json` is checked in as a fixture and
 loads through a schema mirroring its `src/Config.cpp` field for field, reporting
@@ -254,6 +254,56 @@ by `}` still counts as trailing.
 
 `SanitiseJsonc` is public, and usable on its own.
 
+## Generating the file
+
+The same schema renders a settings struct back out as the file a user edits, with
+each `.Help()` text as `//` comments above its key.
+
+```cpp
+#include <PalCfg/Generate.hpp>
+
+int main(int argc, char** argv)
+{
+    return PalCfg::GenerateMain(argc, argv, kFields, Settings{});
+}
+```
+
+```cmake
+include(deps/pal-config-lib/cmake/PalCfgGenerate.cmake)
+
+palcfg_add_generator(mymod_gen
+    SOURCES tools/GenerateConfig.cpp
+    OUTPUT  ${CMAKE_CURRENT_SOURCE_DIR}/config.default.json)
+```
+
+`config.default.json` becomes a build artifact, so its comments can never drift
+from the help text they came from. All three mods keep that file in step by hand
+today.
+
+The generator runs on the machine doing the build. A cross-compiled mod MUST
+therefore configure the generator target for the host separately, or run it under
+Wine.
+
+### What a regeneration preserves
+
+`GenerateFile` reads whatever the file already holds and carries forward every key
+the schema does not claim, each marked with a comment, so a downgrade or a future
+version still finds its own settings.
+
+A file that fails to parse stops the generation with an error and is left where it
+is: overwriting it would discard settings that a fixed typo would have restored.
+
+A file whose content is unchanged is not rewritten at all, so a regeneration that
+decides nothing leaves the timestamp alone. A replacement writes through a
+temporary and renames, keeping the previous copy as `<path>.bak`.
+
+`RenderDocument` and `WriteFileIfChanged` are public, for a mod that wants one
+without the other. Pass `WriteOptions{.includeHelp = false}` for a bare file.
+
+A set renders sorted, since a hash set has no order of its own and a generated
+file must not churn between runs. A type whose `ValueTraits` declares no `Write`
+is absent from the generated file.
+
 ## Design notes
 
 **No public header includes `json.hpp` or `Windows.h`.** PerkyPals kept nlohmann
@@ -324,8 +374,8 @@ target_link_libraries(MyMod PRIVATE PalCfg::Core)
 | 4 ✅ | Coercion across types, dotted-key nesting, clamping, aliases, case-insensitive keys, `FieldPair().SwapIfInverted()` |
 | 5 ✅ | Diagnostics and the two-tier error model, plus unknown-key capture |
 | gate ✅ | PerkyPals' shipped config loads to its documented values, with every field proven to read from the document |
-| next | The documented-file writer and `palcfg-gen`, so `config.default.json` becomes a build artifact |
-| later | Hot reload, the Win32 platform layer, and the optional C-ABI registry that lets a settings menu enumerate every mod |
+| 6 ✅ | The documented-file writer, `GenerateMain` and the CMake glue, so `config.default.json` is a build artifact |
+| next | Hot reload, the Win32 platform layer, and the optional C-ABI registry that lets a settings menu enumerate every mod |
 
 On-disk format is JSONC. Comments are load-bearing: the schema's `.Help()` text
 regenerates them, so a menu writing settings back preserves a config file's

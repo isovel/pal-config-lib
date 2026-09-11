@@ -17,10 +17,21 @@ add_executable(palcfg_tests
     FieldPairTest.cpp
     DiagnosticsTest.cpp
     PerkyPalsFixtureTest.cpp
+    WriteTest.cpp
+    FileTest.cpp
+    GenerateTest.cpp
+    GeneratorToolTest.cpp
 )
 target_link_libraries(palcfg_tests PRIVATE PalCfg::Core Catch2::Catch2WithMain)
+set(PALCFG_GENERATED_CONFIG "${CMAKE_CURRENT_BINARY_DIR}/example.config.json")
+palcfg_add_generator(palcfg_example_gen
+    SOURCES generator/main.cpp
+    OUTPUT "${PALCFG_GENERATED_CONFIG}")
+add_dependencies(palcfg_tests palcfg_example_gen_run)
+
 target_compile_definitions(palcfg_tests PRIVATE
-    PALCFG_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+    PALCFG_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+    PALCFG_GENERATED_CONFIG="${PALCFG_GENERATED_CONFIG}")
 
 if(MSVC)
     target_compile_options(palcfg_tests PRIVATE /W4)

@@ -8,6 +8,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 namespace PalCfg
 {
@@ -98,6 +99,11 @@ namespace PalCfg
         void (*swapIfInverted)(void* base,
                                const void* lowerMemberPtr,
                                const void* upperMemberPtr) = nullptr;
+
+        // Appends the JSON literal for the member of `base` named by
+        // `boundMemberPtr`. Null for a type whose ValueTraits declares no Write,
+        // which keeps a read-only trait out of a generated file.
+        void (*format)(const void* base, const void* boundMemberPtr, std::string& out) = nullptr;
     };
 
     // Flat, homogeneous descriptor. One per field, consumed by the loader, the

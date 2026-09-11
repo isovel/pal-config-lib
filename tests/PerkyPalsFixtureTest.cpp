@@ -17,6 +17,7 @@
 
 #include <PalCfg/Load.hpp>
 #include <PalCfg/Schema.hpp>
+#include <PalCfg/Write.hpp>
 
 namespace
 {
@@ -65,6 +66,8 @@ namespace
         std::vector<std::wstring> ActivityBattleGetters{};
         std::vector<std::wstring> ActivityBattleProperties{};
         std::vector<float> ActivityPeacefulBattleModes{0.0f};
+
+        bool operator==(const Settings&) const = default;
     };
 
     // Config.cpp's ReadStringList and ReadFloatList keep the default when the
@@ -109,6 +112,33 @@ namespace
                 .KeepDefaultIfEmpty();
 
     inline constexpr auto kFields = kSchema.Flatten();
+
+    // Every field set away from its default, so a load that silently skipped one
+    // shows up as a defaulted value.
+    constexpr const char* kAllChanged = R"({
+        "morphTargets": ["Blush", "Sweat"],
+        "arousalRate": 0.5,
+        "holdDelay": 12.5,
+        "decayRate": 0.75,
+        "onsetDelayMin": 3.0,
+        "onsetDelayMax": 9.0,
+        "rateMultiplierMin": 0.25,
+        "rateMultiplierMax": 4.0,
+        "player":   { "enabled": false },
+        "debug":    { "enabled": true, "trace": true, "enableDriver": false,
+                      "enableSanity": false, "enableRegistry": false },
+        "sanity":   { "enabled": false, "threshold": 0.25,
+                      "getters": ["G1"], "maxGetters": ["G2"],
+                      "properties": ["P1"], "maxProperties": ["P2"] },
+        "activity": { "enabled": false,
+                      "fighting": ["F1"], "working": ["W1"], "riding": ["R1"],
+                      "riderGetters": ["RG1"], "components": ["C1"],
+                      "taskObjects": ["TO1"], "idleActions": ["IA1", "IA2"],
+                      "taskGetters": ["TG1"], "taskProperties": ["TP1"],
+                      "idleTasks": [11, 12],
+                      "battleGetters": ["BG1"], "battleProperties": ["BP1"],
+                      "peacefulBattleModes": [5] }
+    })";
 
     std::string ReadFixture(const char* name)
     {
@@ -190,30 +220,6 @@ TEST_CASE("the shipped config.default.json loads to its documented values")
 // actually travels from the document into the member it names.
 TEST_CASE("every field reads from the document rather than defaulting")
 {
-    static constexpr const char* kAllChanged = R"({
-        "morphTargets": ["Blush", "Sweat"],
-        "arousalRate": 0.5,
-        "holdDelay": 12.5,
-        "decayRate": 0.75,
-        "onsetDelayMin": 3.0,
-        "onsetDelayMax": 9.0,
-        "rateMultiplierMin": 0.25,
-        "rateMultiplierMax": 4.0,
-        "player":   { "enabled": false },
-        "debug":    { "enabled": true, "trace": true, "enableDriver": false,
-                      "enableSanity": false, "enableRegistry": false },
-        "sanity":   { "enabled": false, "threshold": 0.25,
-                      "getters": ["G1"], "maxGetters": ["G2"],
-                      "properties": ["P1"], "maxProperties": ["P2"] },
-        "activity": { "enabled": false,
-                      "fighting": ["F1"], "working": ["W1"], "riding": ["R1"],
-                      "riderGetters": ["RG1"], "components": ["C1"],
-                      "taskObjects": ["TO1"], "idleActions": ["IA1", "IA2"],
-                      "taskGetters": ["TG1"], "taskProperties": ["TP1"],
-                      "idleTasks": [11, 12],
-                      "battleGetters": ["BG1"], "battleProperties": ["BP1"],
-                      "peacefulBattleModes": [5] }
-    })";
 
     Settings s{};
     PalCfg::CollectingSink sink;
@@ -298,4 +304,21 @@ TEST_CASE("inverted delay and multiplier bounds are put back in order")
     CHECK(s.OnsetDelayMax == 20.0f);
     CHECK(s.RateMultiplierMin == 1.0f);
     CHECK(s.RateMultiplierMax == 3.0f);
+}
+
+TEST_CASE("a rendered document loads back to the same settings")
+{
+    Settings loaded{};
+    REQUIRE(PalCfg::LoadFromText(kFields, kAllChanged, loaded).fieldsLoaded == 34);
+
+    const std::string rendered = PalCfg::RenderDocument(kFields, loaded);
+
+    Settings reloaded{};
+    PalCfg::CollectingSink sink;
+    const auto result = PalCfg::LoadFromText(kFields, rendered, reloaded, sink);
+
+    CHECK(result.fieldsLoaded == 34);
+    CHECK(result.unknownKeys.empty());
+    CHECK(sink.All().empty());
+    CHECK(reloaded == loaded);
 }

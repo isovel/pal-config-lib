@@ -36,6 +36,8 @@ add_library(palcfg_core STATIC
     "src/core/Utf.cpp"
     "src/core/Coerce.cpp"
     "src/core/Diagnostics.cpp"
+    "src/core/Write.cpp"
+    "src/core/File.cpp"
 )
 target_include_directories(palcfg_core PUBLIC
     "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>")
@@ -44,6 +46,8 @@ target_include_directories(palcfg_core PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party")
 target_compile_features(palcfg_core PUBLIC cxx_std_23)
 add_library(PalCfg::Core ALIAS palcfg_core)
+
+include("${CMAKE_CURRENT_LIST_DIR}/cmake/PalCfgGenerate.cmake")
 
 if(PALCFG_BUILD_TESTS)
     enable_testing()

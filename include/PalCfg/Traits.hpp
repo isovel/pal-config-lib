@@ -7,6 +7,7 @@
 // false to mean "leave the value alone", which is how a missing or unreadable
 // setting keeps the default its struct declared.
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <limits>
@@ -23,6 +24,7 @@
 #include <PalCfg/Field.hpp>
 #include <PalCfg/Utf.hpp>
 #include <PalCfg/Value.hpp>
+#include <PalCfg/Write.hpp>
 
 namespace PalCfg
 {
@@ -34,6 +36,12 @@ namespace PalCfg
 
     template <class M, class Enable = void>
     struct ValueTraits;
+
+    // A type whose traits can render it back out. A consumer specialising
+    // ValueTraits for a type it only ever reads leaves Write off, and that field
+    // is then absent from a generated file.
+    template <class M>
+    concept Writable = requires(const M& value, std::string& out) { ValueTraits<M>::Write(value, out); };
 
 
     template <>
@@ -47,6 +55,8 @@ namespace PalCfg
             if (!source.IsBool()) Detail::NoteCoercion(context, source, "a bool");
             return true;
         }
+
+        static void Write(const bool& value, std::string& out) { out += value ? "true" : "false"; }
     };
 
     // Every integral except bool, which has its own specialisation above.
@@ -71,6 +81,11 @@ namespace PalCfg
             out = static_cast<M>(wide);
             return true;
         }
+
+        static void Write(const M& value, std::string& out)
+        {
+            Detail::AppendJsonNumber(out, static_cast<double>(value), false);
+        }
     };
 
     template <>
@@ -87,6 +102,8 @@ namespace PalCfg
             out = static_cast<float>(Detail::Clamp(value, context));
             return true;
         }
+
+        static void Write(const float& value, std::string& out) { Detail::AppendJsonNumber(out, value); }
     };
 
     template <>
@@ -103,6 +120,11 @@ namespace PalCfg
             out = Detail::Clamp(value, context);
             return true;
         }
+
+        static void Write(const double& value, std::string& out)
+        {
+            Detail::AppendJsonNumber(out, value, true);
+        }
     };
 
     template <>
@@ -115,6 +137,11 @@ namespace PalCfg
             if (!Detail::CoerceUtf8(source, out)) return false;
             if (!source.IsString()) Detail::NoteCoercion(context, source, "text");
             return true;
+        }
+
+        static void Write(const std::string& value, std::string& out)
+        {
+            Detail::AppendJsonString(out, value);
         }
     };
 
@@ -132,6 +159,11 @@ namespace PalCfg
             out = Utf8ToWide(utf8);
             return true;
         }
+
+        static void Write(const std::wstring& value, std::string& out)
+        {
+            Detail::AppendJsonString(out, WideToUtf8(value));
+        }
     };
 
     namespace Detail
@@ -140,6 +172,25 @@ namespace PalCfg
         // Collapsing it into "unreadable" would make the loader warn about a file
         // that is perfectly correct - every list in PerkyPals' shipped config whose
         // default is already empty arrives as [].
+        // Renders one element per entry. A list stays on one line: PerkyPals'
+        // longest is six short names, and one line per list keeps a config file
+        // readable at a glance.
+        template <class Element, class Range>
+        void WriteElements(const Range& values, std::string& out)
+        {
+            out += '[';
+
+            bool first = true;
+            for (const auto& value : values)
+            {
+                if (!first) out += ", ";
+                first = false;
+                ValueTraits<Element>::Write(value, out);
+            }
+
+            out += ']';
+        }
+
         enum class ElementsOutcome
         {
             Assign,
@@ -210,6 +261,11 @@ namespace PalCfg
 
             return true;
         }
+        static void Write(const std::vector<Element>& value, std::string& out)
+            requires Writable<Element>
+        {
+            Detail::WriteElements<Element>(value, out);
+        }
     };
 
     template <class Element, class Hash, class Equal, class Alloc>
@@ -230,6 +286,27 @@ namespace PalCfg
 
             return true;
         }
+        // Sorted, since a hash set has no order of its own and a generated file
+        // must not churn between runs.
+        static void Write(const Set& value, std::string& out)
+            requires Writable<Element>
+        {
+            std::vector<std::string> rendered;
+            rendered.reserve(value.size());
+            for (const auto& element : value)
+            {
+                ValueTraits<Element>::Write(element, rendered.emplace_back());
+            }
+            std::sort(rendered.begin(), rendered.end());
+
+            out += '[';
+            for (std::size_t i = 0; i < rendered.size(); ++i)
+            {
+                if (i > 0) out += ", ";
+                out += rendered[i];
+            }
+            out += ']';
+        }
     };
 
     // An absent key never reaches Read, so the member keeps its declared
@@ -246,6 +323,14 @@ namespace PalCfg
 
             out = std::move(value);
             return true;
+        }
+        // An unset option writes null, which reads back as unset: the file says
+        // "no answer here" in the one spelling JSON has for it.
+        static void Write(const std::optional<Inner>& value, std::string& out)
+            requires Writable<Inner>
+        {
+            if (!value.has_value()) out += "null";
+            else ValueTraits<Inner>::Write(*value, out);
         }
     };
 
@@ -290,6 +375,19 @@ namespace PalCfg
             return false; // a number outside the enum keeps the default
         }
 
+        // The name is the canonical spelling, so a value with no name falls back
+        // to its ordinal and still reads back.
+        static void Write(const M& value, std::string& out)
+        {
+            for (const auto& [candidate, known] : EnumNames<M>::kValues)
+            {
+                if (known != value) continue;
+                Detail::AppendJsonString(out, candidate);
+                return;
+            }
+
+            Detail::AppendJsonNumber(out, static_cast<double>(value), false);
+        }
     };
 
     // The type-erased thunk for one (struct, member type) pair. Templated on the
@@ -326,10 +424,21 @@ namespace PalCfg
             }
         }
 
+        static void Format(const void* base, const void* boundMemberPtr, std::string& out)
+        {
+            if constexpr (Writable<M>)
+            {
+                const auto memberPtr = *static_cast<M T::* const*>(boundMemberPtr);
+                ValueTraits<M>::Write(static_cast<const T*>(base)->*memberPtr, out);
+            }
+        }
+
         // Ordering is what the swap needs, so types without it get no hook and
         // .SwapIfInverted has nothing to call.
         static constexpr auto kSwapHook = std::is_arithmetic_v<M> ? &SwapIfInverted : nullptr;
 
-        static inline constexpr FieldOps kInstance{ValueTraits<M>::kKind, &Parse, kSwapHook};
+        static constexpr auto kFormatHook = Writable<M> ? &Format : nullptr;
+
+        static inline constexpr FieldOps kInstance{ValueTraits<M>::kKind, &Parse, kSwapHook, kFormatHook};
     };
 } // namespace PalCfg
