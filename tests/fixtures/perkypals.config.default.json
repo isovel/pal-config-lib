@@ -12,13 +12,13 @@
 
     // Seconds held at full before decay starts. Not scaled by the per-pal
     // multiplier, so every pal holds for the same time. Does not apply to a
-    // gated base worker while its SAN is above the threshold - that holds
+    // gated base worker while its SAN is above sanity.threshold - that holds
     // indefinitely.
     "holdDelay": 60.0,
 
     // Weight per second while falling. 0.10 is a full fall in ~10s, so 7-20s
     // across the multiplier range.
-    "decayRate": 0.10,
+    "decayRate": 0.1,
 
     // Seconds a pal rests at zero before starting again. Re-rolled every cycle,
     // so pals drift apart over time instead of settling into a fixed offset.
@@ -30,27 +30,33 @@
     // Per-pal speed scale, rolled once per pal. Applies to both rise and fall.
     "rateMultiplierMin": 0.5,
     "rateMultiplierMax": 1.5,
-
-    // The player character, driven alongside the pals off the same morph
-    // target names. The activity block below reaches it: fighting or working
-    // brings it down at once, and anything else - idle, sleeping, riding -
-    // runs the cycle and holds at full instead of timing out of the hold.
-    // SAN is a pal's parameter, so the sanity block never reaches it.
-    //
-    // Riding needs no rule of its own: a riding player is not in battle and
-    // holds no work action, so it reads idle. If a build gives it one, add
-    // that action to activity.idleActions.
-    //
-    // Hot-reloads. Turning it off mid-session zeroes the morph and drops the
-    // player from the registry within a second; turning it back on picks it up
-    // again at a random point in the cycle.
     "player": {
-        "enabled": true
-    },
+        // The player character, driven alongside the pals off the same morph
+        // target names. The activity block below reaches it: fighting or working
+        // brings it down at once, and anything else - idle, sleeping, riding -
+        // runs the cycle and holds at full instead of timing out of the hold.
+        // SAN is a pal's parameter, so the sanity block never reaches it.
+        //
+        // Riding needs no rule of its own: a riding player is not in battle and
+        // holds no work action, so it reads idle. If a build gives it one, add
+        // that action to activity.idleActions.
+        //
+        // Hot-reloads. Turning it off mid-session zeroes the morph and drops the
+        // player from the registry within a second; turning it back on picks it up
+        // again at a random point in the cycle.
+        "enabled": true,
 
-    // Diagnostics. These hot-reload, so a subsystem can be turned off while
-    // the game is running to isolate a fault - no rebuild, no restart.
+        // The hold at full needs both of these: hunger at or above the
+        // ratio AND health at or above the ratio. Below either the player
+        // runs the plain timed cycle, and the condition block's own
+        // thresholds still bring it down.
+        "holdHungerAtLeast": 0.75,
+        "holdHealthAtLeast": 0.98
+    },
     "debug": {
+        // Diagnostics. These hot-reload, so a subsystem can be turned off while
+        // the game is running to isolate a fault - no rebuild, no restart.
+        //
         // Master switch for everything diagnostic: the Alt+P / Alt+I / Alt+O /
         // Alt+L / Alt+U / Alt+K hotkeys, the reflection dump, the per-phase tick
         // timing, and the whole informational log stream. Off here, so a build
@@ -67,6 +73,7 @@
         // Log each tick phase once a second. The last line before a crash
         // names the subsystem that was running. Requires "enabled" above.
         "trace": false,
+
         // Functional kill-switches rather than diagnostics: these work
         // regardless of "enabled", so a suspect subsystem can be shut off in
         // a build that is otherwise silent.
@@ -74,7 +81,35 @@
         "enableSanity": true,
         "enableRegistry": true
     },
+    "condition": {
+        // Condition rules. Any one of these brings the value down for as long
+        // as it holds, at the same rank as fighting or working: hunger below the
+        // ratio, health below the ratio, out of stamina, taking damage (in a
+        // fight or not - any HP drop holds it down for hurtHold seconds, so a
+        // single hit registers rather than one 1s sample), draining stamina
+        // (same shape, drainHold), and for pals being sick or
+        // sitting in the party undeployed; for the player, being too hot or too
+        // cold or carrying more than the inventory allows. An undeployed pal
+        // starts climbing the moment it is sent out.
+        //
+        // The accessors are fixed names confirmed against the header dump, so
+        // only the thresholds live here. Hot-reloads.
+        "enabled": true,
+        "hungerBelow": 0.5,
+        "healthBelow": 0.5,
 
+        // Stamina ratio at or below which the character counts as spent.
+        "staminaAtMost": 0.0,
+
+        // Player only: inventory weight over its cap, as a ratio of the cap.
+        "weightAbove": 1.0,
+        "hurtHold": 5.0,
+
+        // Likewise for stamina: anything that drains it - sprinting,
+        // climbing, gliding, a pal's attacks - holds the sign negative for
+        // this many seconds after each drop.
+        "drainHold": 3.0
+    },
     "activity": {
         // A pal that is fighting or working comes down regardless of anything
         // else - its SAN, its phase, where it was in the cycle. The one
@@ -90,7 +125,7 @@
         // longer guess list is not free. It is a chance for a wrong name to
         // resolve first and quietly measure something else, which is exactly
         // what GetCurrentWorkSuitability did.
-
+        //
         // A no-arg bool on the pal: true in combat. Because it is a bool, the
         // numeric battleGetters/battleProperties below stay empty.
         "fighting": ["GetBattleMode"],
@@ -155,7 +190,7 @@
         //    2  WakeUp                 rest
         //    6  Eat                    rest
         //   38  Happy                  reaction, not work
-        //   39  IdleInSpa              also vetoed by idleActions below
+        //   39  IdleInSpa              also vetoed by idleActions above
         //   54  WaitLoadingAction      placeholder while the pal streams in
         //   55  HumanPetting           social, initiated at the pal
         //   56  PalPetting             social
@@ -188,14 +223,15 @@
         "battleProperties": [],
         "peacefulBattleModes": [0]
     },
-
     "sanity": {
-        // Base camp workers only: arousal rises while SAN is above the
-        // threshold and falls once it drops below. At full it stays there for
-        // as long as SAN holds up, ignoring holdDelay. Wild and party pals
-        // always run the plain timer cycle.
+        // Base camp workers only. Below riseThreshold a pal cannot get
+        // aroused at all and falls. Between the two it runs the plain timed
+        // cycle. Above threshold it stays at full for as long as SAN holds
+        // up, ignoring holdDelay. Wild and party pals always run the plain
+        // timer cycle.
         "enabled": true,
-        "threshold": 0.8,
+        "riseThreshold": 0.8,
+        "threshold": 0.95,
 
         // Confirmed on this build via the Alt+U reflection dump:
         // PalIndividualCharacterParameter exposes SAN only as a getter pair,

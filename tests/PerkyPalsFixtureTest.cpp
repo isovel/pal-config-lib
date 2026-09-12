@@ -1,5 +1,6 @@
 // The v1 acceptance gate: PerkyPals' real shipped config, loaded through a schema
-// that mirrors src/Config.cpp field for field.
+// that mirrors its include/ConfigSchema.hpp field for field. The fixture is the
+// file that schema generates, so this also proves the generated file reads back.
 //
 // config.default.json holds only default values, so on its own it cannot tell a
 // value that was read from a value that was defaulted. Three tests together close
@@ -36,6 +37,8 @@ namespace
         float RateMultiplierMax = 1.5f;
 
         bool PlayerEnabled = true;
+        float PlayerHoldHungerAtLeast = 0.75f;
+        float PlayerHoldHealthAtLeast = 0.98f;
 
         bool DebugEnabled = false;
         bool Trace = false;
@@ -44,7 +47,8 @@ namespace
         bool EnableRegistry = true;
 
         bool SanityEnabled = true;
-        float SanityThreshold = 0.8f;
+        float SanityRiseThreshold = 0.8f;
+        float SanityThreshold = 0.95f;
         std::vector<std::wstring> SanityGetters{L"GetSanityValue"};
         std::vector<std::wstring> SanityMaxGetters{L"GetMaxSanityValue"};
         std::vector<std::wstring> SanityProperties{};
@@ -60,19 +64,24 @@ namespace
         std::vector<std::wstring> ActivityIdleActions{L"Idle"};
         std::vector<std::wstring> ActivityTaskGetters{L"GetCurrentActionType"};
         std::vector<std::wstring> ActivityTaskProperties{};
-        std::vector<float> ActivityIdleTasks{0.0f,  1.0f,  2.0f,  6.0f,  38.0f, 39.0f, 54.0f,
-                                             55.0f, 56.0f, 57.0f, 58.0f, 59.0f, 60.0f, 61.0f,
-                                             62.0f, 63.0f, 64.0f, 77.0f, 78.0f};
+        std::vector<int> ActivityIdleTasks{0, 1, 2, 6, 38, 39, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 77, 78};
         std::vector<std::wstring> ActivityBattleGetters{};
         std::vector<std::wstring> ActivityBattleProperties{};
-        std::vector<float> ActivityPeacefulBattleModes{0.0f};
+        std::vector<int> ActivityPeacefulBattleModes{0};
+
+        bool ConditionEnabled = true;
+        float ConditionHungerBelow = 0.50f;
+        float ConditionHealthBelow = 0.50f;
+        float ConditionStaminaAtMost = 0.0f;
+        float ConditionWeightAbove = 1.0f;
+        float ConditionHurtHold = 5.0f;
+        float ConditionDrainHold = 3.0f;
 
         bool operator==(const Settings&) const = default;
     };
 
-    // Config.cpp's ReadStringList and ReadFloatList keep the default when the
-    // parsed list comes out empty. idleActions is the one exception: it assigns
-    // unconditionally, so an empty array there clears the list.
+    // Every list keeps its default when the file's list comes out empty.
+    // idleActions is the one exception: an empty array there clears the list.
     inline constexpr auto kSchema =
         PalCfg::Schema<Settings>("PerkyPals")
             .Field("morphTargets", &Settings::MorphTargets).KeepDefaultIfEmpty()
@@ -84,13 +93,16 @@ namespace
             .FieldPair("rateMultiplierMin", &Settings::RateMultiplierMin,
                        "rateMultiplierMax", &Settings::RateMultiplierMax).SwapIfInverted()
             .Field("player.enabled", &Settings::PlayerEnabled)
+            .Field("player.holdHungerAtLeast", &Settings::PlayerHoldHungerAtLeast)
+            .Field("player.holdHealthAtLeast", &Settings::PlayerHoldHealthAtLeast)
             .Field("debug.enabled", &Settings::DebugEnabled)
             .Field("debug.trace", &Settings::Trace)
             .Field("debug.enableDriver", &Settings::EnableDriver)
             .Field("debug.enableSanity", &Settings::EnableSanity)
             .Field("debug.enableRegistry", &Settings::EnableRegistry)
             .Field("sanity.enabled", &Settings::SanityEnabled)
-            .Field("sanity.threshold", &Settings::SanityThreshold)
+            .FieldPair("sanity.riseThreshold", &Settings::SanityRiseThreshold,
+                       "sanity.threshold", &Settings::SanityThreshold).SwapIfInverted()
             .Field("sanity.getters", &Settings::SanityGetters).KeepDefaultIfEmpty()
             .Field("sanity.maxGetters", &Settings::SanityMaxGetters).KeepDefaultIfEmpty()
             .Field("sanity.properties", &Settings::SanityProperties).KeepDefaultIfEmpty()
@@ -109,7 +121,14 @@ namespace
             .Field("activity.battleGetters", &Settings::ActivityBattleGetters).KeepDefaultIfEmpty()
             .Field("activity.battleProperties", &Settings::ActivityBattleProperties).KeepDefaultIfEmpty()
             .Field("activity.peacefulBattleModes", &Settings::ActivityPeacefulBattleModes)
-                .KeepDefaultIfEmpty();
+                .KeepDefaultIfEmpty()
+            .Field("condition.enabled", &Settings::ConditionEnabled)
+            .Field("condition.hungerBelow", &Settings::ConditionHungerBelow)
+            .Field("condition.healthBelow", &Settings::ConditionHealthBelow)
+            .Field("condition.staminaAtMost", &Settings::ConditionStaminaAtMost)
+            .Field("condition.weightAbove", &Settings::ConditionWeightAbove)
+            .Field("condition.hurtHold", &Settings::ConditionHurtHold)
+            .Field("condition.drainHold", &Settings::ConditionDrainHold);
 
     inline constexpr auto kFields = kSchema.Flatten();
 
@@ -124,10 +143,10 @@ namespace
         "onsetDelayMax": 9.0,
         "rateMultiplierMin": 0.25,
         "rateMultiplierMax": 4.0,
-        "player":   { "enabled": false },
+        "player":   { "enabled": false, "holdHungerAtLeast": 0.1, "holdHealthAtLeast": 0.2 },
         "debug":    { "enabled": true, "trace": true, "enableDriver": false,
                       "enableSanity": false, "enableRegistry": false },
-        "sanity":   { "enabled": false, "threshold": 0.25,
+        "sanity":   { "enabled": false, "riseThreshold": 0.15, "threshold": 0.25,
                       "getters": ["G1"], "maxGetters": ["G2"],
                       "properties": ["P1"], "maxProperties": ["P2"] },
         "activity": { "enabled": false,
@@ -137,7 +156,10 @@ namespace
                       "taskGetters": ["TG1"], "taskProperties": ["TP1"],
                       "idleTasks": [11, 12],
                       "battleGetters": ["BG1"], "battleProperties": ["BP1"],
-                      "peacefulBattleModes": [5] }
+                      "peacefulBattleModes": [5] },
+        "condition": { "enabled": false, "hungerBelow": 0.1, "healthBelow": 0.2,
+                       "staminaAtMost": 0.3, "weightAbove": 0.4, "hurtHold": 1.5,
+                       "drainHold": 2.5 }
     })";
 
     std::string ReadFixture(const char* name)
@@ -151,9 +173,9 @@ namespace
     }
 } // namespace
 
-TEST_CASE("the schema covers every field src/Config.cpp parses")
+TEST_CASE("the schema covers every field PerkyPals declares")
 {
-    STATIC_REQUIRE(kFields.size() == 34);
+    STATIC_REQUIRE(kFields.size() == 44);
 }
 
 TEST_CASE("the shipped config.default.json loads to its documented values")
@@ -173,10 +195,10 @@ TEST_CASE("the shipped config.default.json loads to its documented values")
         CHECK(false);
     }
 
-    // Every key in the file is claimed by a field, and the file's 34 keys match
-    // the schema's 34, so neither side has drifted from the other.
+    // Every key in the file is claimed by a field, and the file's 44 keys match
+    // the schema's 44, so neither side has drifted from the other.
     CHECK(result.unknownKeys.empty());
-    CHECK(result.fieldsLoaded == 34);
+    CHECK(result.fieldsLoaded == 44);
 
     CHECK(s.MorphTargets == std::vector<std::wstring>{L"Aroused"});
     CHECK(s.ArousalRate == 0.08f);
@@ -187,13 +209,16 @@ TEST_CASE("the shipped config.default.json loads to its documented values")
     CHECK(s.RateMultiplierMin == 0.5f);
     CHECK(s.RateMultiplierMax == 1.5f);
     CHECK(s.PlayerEnabled);
+    CHECK(s.PlayerHoldHungerAtLeast == 0.75f);
+    CHECK(s.PlayerHoldHealthAtLeast == 0.98f);
     CHECK_FALSE(s.DebugEnabled);
     CHECK_FALSE(s.Trace);
     CHECK(s.EnableDriver);
     CHECK(s.EnableSanity);
     CHECK(s.EnableRegistry);
     CHECK(s.SanityEnabled);
-    CHECK(s.SanityThreshold == 0.8f);
+    CHECK(s.SanityRiseThreshold == 0.8f);
+    CHECK(s.SanityThreshold == 0.95f);
     CHECK(s.SanityGetters == std::vector<std::wstring>{L"GetSanityValue"});
     CHECK(s.SanityMaxGetters == std::vector<std::wstring>{L"GetMaxSanityValue"});
     CHECK(s.SanityProperties.empty());
@@ -209,11 +234,18 @@ TEST_CASE("the shipped config.default.json loads to its documented values")
     CHECK(s.ActivityTaskGetters == std::vector<std::wstring>{L"GetCurrentActionType"});
     CHECK(s.ActivityTaskProperties.empty());
     REQUIRE(s.ActivityIdleTasks.size() == 19);
-    CHECK(s.ActivityIdleTasks.front() == 0.0f);
-    CHECK(s.ActivityIdleTasks.back() == 78.0f);
+    CHECK(s.ActivityIdleTasks.front() == 0);
+    CHECK(s.ActivityIdleTasks.back() == 78);
     CHECK(s.ActivityBattleGetters.empty());
     CHECK(s.ActivityBattleProperties.empty());
-    CHECK(s.ActivityPeacefulBattleModes == std::vector<float>{0.0f});
+    CHECK(s.ActivityPeacefulBattleModes == std::vector<int>{0});
+    CHECK(s.ConditionEnabled);
+    CHECK(s.ConditionHungerBelow == 0.5f);
+    CHECK(s.ConditionHealthBelow == 0.5f);
+    CHECK(s.ConditionStaminaAtMost == 0.0f);
+    CHECK(s.ConditionWeightAbove == 1.0f);
+    CHECK(s.ConditionHurtHold == 5.0f);
+    CHECK(s.ConditionDrainHold == 3.0f);
 }
 
 // The shipped file holds defaults throughout, so this is what proves a value
@@ -227,7 +259,7 @@ TEST_CASE("every field reads from the document rather than defaulting")
 
     REQUIRE(result.Ok());
     CHECK(result.unknownKeys.empty());
-    CHECK(result.fieldsLoaded == 34);
+    CHECK(result.fieldsLoaded == 44);
     CHECK(sink.Count(PalCfg::Severity::Warning) == 0);
     CHECK(sink.Count(PalCfg::Severity::Error) == 0);
 
@@ -240,12 +272,15 @@ TEST_CASE("every field reads from the document rather than defaulting")
     CHECK(s.RateMultiplierMin == 0.25f);
     CHECK(s.RateMultiplierMax == 4.0f);
     CHECK_FALSE(s.PlayerEnabled);
+    CHECK(s.PlayerHoldHungerAtLeast == 0.1f);
+    CHECK(s.PlayerHoldHealthAtLeast == 0.2f);
     CHECK(s.DebugEnabled);
     CHECK(s.Trace);
     CHECK_FALSE(s.EnableDriver);
     CHECK_FALSE(s.EnableSanity);
     CHECK_FALSE(s.EnableRegistry);
     CHECK_FALSE(s.SanityEnabled);
+    CHECK(s.SanityRiseThreshold == 0.15f);
     CHECK(s.SanityThreshold == 0.25f);
     CHECK(s.SanityGetters == std::vector<std::wstring>{L"G1"});
     CHECK(s.SanityMaxGetters == std::vector<std::wstring>{L"G2"});
@@ -261,15 +296,22 @@ TEST_CASE("every field reads from the document rather than defaulting")
     CHECK(s.ActivityIdleActions == std::vector<std::wstring>{L"IA1", L"IA2"});
     CHECK(s.ActivityTaskGetters == std::vector<std::wstring>{L"TG1"});
     CHECK(s.ActivityTaskProperties == std::vector<std::wstring>{L"TP1"});
-    CHECK(s.ActivityIdleTasks == std::vector<float>{11.0f, 12.0f});
+    CHECK(s.ActivityIdleTasks == std::vector<int>{11, 12});
     CHECK(s.ActivityBattleGetters == std::vector<std::wstring>{L"BG1"});
     CHECK(s.ActivityBattleProperties == std::vector<std::wstring>{L"BP1"});
-    CHECK(s.ActivityPeacefulBattleModes == std::vector<float>{5.0f});
+    CHECK(s.ActivityPeacefulBattleModes == std::vector<int>{5});
+    CHECK_FALSE(s.ConditionEnabled);
+    CHECK(s.ConditionHungerBelow == 0.1f);
+    CHECK(s.ConditionHealthBelow == 0.2f);
+    CHECK(s.ConditionStaminaAtMost == 0.3f);
+    CHECK(s.ConditionWeightAbove == 0.4f);
+    CHECK(s.ConditionHurtHold == 1.5f);
+    CHECK(s.ConditionDrainHold == 2.5f);
 }
 
-// src/Config.cpp:149-159 assigns idleActions unconditionally while every other
-// list keeps its default when the parsed result is empty. That asymmetry is
-// deliberate, and it is the whole reason KeepDefaultIfEmpty is per-field.
+// idleActions clears on an empty array while every other list keeps its
+// default. That asymmetry is deliberate, and it is the whole reason
+// KeepDefaultIfEmpty is per-field.
 TEST_CASE("an empty list clears only idleActions")
 {
     Settings s{};
@@ -289,14 +331,15 @@ TEST_CASE("an empty list clears only idleActions")
     CHECK(s.SanityGetters == std::vector<std::wstring>{L"GetSanityValue"});
 }
 
-// src/Config.cpp:195-199 swapped these by hand after parsing.
-TEST_CASE("inverted delay and multiplier bounds are put back in order")
+// The pre-migration loader swapped these by hand after parsing.
+TEST_CASE("inverted delay, multiplier and sanity bounds are put back in order")
 {
     Settings s{};
     const PalCfg::LoadResult result = PalCfg::LoadFromText(
         kFields,
         R"({"onsetDelayMin": 20, "onsetDelayMax": 4,
-            "rateMultiplierMin": 3.0, "rateMultiplierMax": 1.0})",
+            "rateMultiplierMin": 3.0, "rateMultiplierMax": 1.0,
+            "sanity": {"riseThreshold": 0.9, "threshold": 0.6}})",
         s);
 
     REQUIRE(result.Ok());
@@ -304,12 +347,14 @@ TEST_CASE("inverted delay and multiplier bounds are put back in order")
     CHECK(s.OnsetDelayMax == 20.0f);
     CHECK(s.RateMultiplierMin == 1.0f);
     CHECK(s.RateMultiplierMax == 3.0f);
+    CHECK(s.SanityRiseThreshold == 0.6f);
+    CHECK(s.SanityThreshold == 0.9f);
 }
 
 TEST_CASE("a rendered document loads back to the same settings")
 {
     Settings loaded{};
-    REQUIRE(PalCfg::LoadFromText(kFields, kAllChanged, loaded).fieldsLoaded == 34);
+    REQUIRE(PalCfg::LoadFromText(kFields, kAllChanged, loaded).fieldsLoaded == 44);
 
     const std::string rendered = PalCfg::RenderDocument(kFields, loaded);
 
@@ -317,7 +362,7 @@ TEST_CASE("a rendered document loads back to the same settings")
     PalCfg::CollectingSink sink;
     const auto result = PalCfg::LoadFromText(kFields, rendered, reloaded, sink);
 
-    CHECK(result.fieldsLoaded == 34);
+    CHECK(result.fieldsLoaded == 44);
     CHECK(result.unknownKeys.empty());
     CHECK(sink.All().empty());
     CHECK(reloaded == loaded);

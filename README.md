@@ -14,9 +14,10 @@ out as a documented file, and keeps it live while the game runs. A mod finds its
 own config beside its DLL and routes diagnostics into its own log. The menu
 registry comes next. See the roadmap.
 
-PerkyPals' real shipped `config.default.json` is checked in as a fixture and
-loads through a schema mirroring its `src/Config.cpp` field for field, reporting
-nothing and leaving no key unclaimed.
+PerkyPals is migrated: its `include/ConfigSchema.hpp` declares 44 fields, its
+`config.default.json` is generated from them, and that file is checked in here
+as a fixture that loads through a mirror schema reporting nothing and leaving
+no key unclaimed.
 
 ```cpp
 #include <PalCfg/Schema.hpp>
@@ -501,10 +502,11 @@ consumed via `add_subdirectory`.
 
 Verified on clang 19 (Linux), g++ 12 (Linux), and clang-cl 19 cross-compiling to
 `x86_64-pc-windows-msvc` against the Microsoft STL via
-[xwin](https://github.com/Jake-Shadle/xwin). MSVC's own front-end remains
-untested, as this environment has no Windows host. `src/win32/Module.cpp` is
-compiled there but never executed, so its two Win32 calls MUST be exercised on a
-real Windows host before a release. You MUST run the suite under
+[xwin](https://github.com/Jake-Shadle/xwin), both standalone and linked into
+PerkyPals' `main.dll`. MSVC's own front-end remains untested, as this
+environment has no Windows host. `src/win32/Module.cpp` is compiled there but
+never executed, so its two Win32 calls MUST be exercised on a real Windows host
+before a release; the migrated PerkyPals is the first build that will. You MUST run the suite under
 MSVC before tagging a release. Every compile-time claim is a `static_assert`, so
 a divergence fails the build loudly.
 
@@ -556,6 +558,7 @@ target_link_libraries(MyMod PRIVATE PalCfg::Core)
 | 6 ✅ | The documented-file writer, `GenerateMain` and the CMake glue, so `config.default.json` is a build artifact |
 | 7 ✅ | `ConfigFile`: polled hot reload, an atomic live snapshot, and `Save()` that does not trigger itself |
 | 8 ✅ | The Win32 platform layer: module-relative paths and a formatting log sink |
+| 9 ✅ | PerkyPals migrated: `src/Config.cpp` is under 100 lines over `ConfigFile`, `config.default.json` is a build artifact |
 | next | The optional C-ABI registry that lets a settings menu enumerate every mod |
 
 On-disk format is JSONC. Comments are load-bearing: the schema's `.Help()` text
