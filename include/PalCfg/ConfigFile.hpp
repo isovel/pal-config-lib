@@ -70,6 +70,21 @@ namespace PalCfg
             return Apply(std::move(text));
         }
 
+        // Load(), and when the file is absent, writes the declared defaults as
+        // the documented file and reports a Note, so a first run leaves the user
+        // something to edit. A file that exists and cannot be read is still a
+        // Warning, and a write that fails is an Error; both leave the defaults
+        // live.
+        bool LoadOrCreate()
+        {
+            if (StatFile(m_path).exists) return Load();
+
+            if (!Save(T{})) return false;
+
+            Report(Severity::Note, "wrote " + m_path + " with the defaults");
+            return true;
+        }
+
         // Returns true when this call put new settings live.
         bool Tick(Clock::time_point now)
         {

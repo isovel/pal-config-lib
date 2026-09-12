@@ -66,6 +66,52 @@ TEST_CASE("a file that is not there leaves the declared defaults", "[reload]")
     CHECK(config.Get()->Count == 5);
 }
 
+TEST_CASE("loading with creation writes the defaults when the file is absent", "[reload]")
+{
+    const auto path = TempPath("created.json");
+
+    PalCfg::CollectingSink sink;
+    PalCfg::ConfigFile<Settings, kFields.size()> config{kFields, path.string()};
+    config.SetSink(sink);
+
+    CHECK(config.LoadOrCreate());
+    CHECK(std::filesystem::exists(path));
+    CHECK(sink.Count(PalCfg::Severity::Note) == 1);
+    CHECK(sink.Count(PalCfg::Severity::Warning) == 0);
+
+    // The file it wrote reads back as the defaults, and is not seen as an edit.
+    std::string text;
+    REQUIRE(PalCfg::ReadFileText(path.string(), text));
+    CHECK(text.find("\"count\": 5") != std::string::npos);
+    CHECK_FALSE(config.Tick(kStart + 2s));
+}
+
+TEST_CASE("loading with creation reads a file that is there", "[reload]")
+{
+    const auto path = TempPath("present.json");
+    Put(path, R"({ "enabled": false, "count": 9 })");
+
+    PalCfg::ConfigFile<Settings, kFields.size()> config{kFields, path.string()};
+    CHECK(config.LoadOrCreate());
+    CHECK(config.Get()->Count == 9);
+}
+
+TEST_CASE("loading with creation reports a file it cannot write", "[reload]")
+{
+    // The parent is a regular file, so nothing can be created beneath it.
+    const auto blocker = TempPath("blocker");
+    Put(blocker, "x");
+    const auto path = blocker / "created.json";
+
+    PalCfg::CollectingSink sink;
+    PalCfg::ConfigFile<Settings, kFields.size()> config{kFields, path.string()};
+    config.SetSink(sink);
+
+    CHECK_FALSE(config.LoadOrCreate());
+    CHECK(sink.Count(PalCfg::Severity::Error) == 1);
+    CHECK(config.Get()->Count == 5);
+}
+
 TEST_CASE("an edit is picked up once the interval has passed", "[reload]")
 {
     const auto path = TempPath("edited.json");

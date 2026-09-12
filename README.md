@@ -395,6 +395,11 @@ void OnTick()
 }
 ```
 
+`LoadOrCreate()` is `Load()` for a first run: when the file is absent it writes
+the declared defaults as the documented file and reports a `Note`, so the user
+finds something to edit. A file that exists and cannot be read is still a
+`Warning`, since that is what a broken install looks like.
+
 `Get()` is safe from any thread and never returns a half-applied reload, since
 the live settings sit behind an atomic shared pointer. `Load()`, `Tick()` and
 `Save()` MUST all be called from one thread, which for a UE4SS mod is the game
