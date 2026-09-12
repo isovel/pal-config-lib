@@ -503,12 +503,11 @@ consumed via `add_subdirectory`.
 Verified on clang 19 (Linux), g++ 12 (Linux), and clang-cl 19 cross-compiling to
 `x86_64-pc-windows-msvc` against the Microsoft STL via
 [xwin](https://github.com/Jake-Shadle/xwin), both standalone and linked into
-PerkyPals' `main.dll`. MSVC's own front-end remains untested, as this
-environment has no Windows host. `src/win32/Module.cpp` is compiled there but
-never executed, so its two Win32 calls MUST be exercised on a real Windows host
-before a release; the migrated PerkyPals is the first build that will. You MUST run the suite under
-MSVC before tagging a release. Every compile-time claim is a `static_assert`, so
-a divergence fails the build loudly.
+PerkyPals' `main.dll`, which has run in-game: the config path resolved from the
+DLL, every value loaded, and an edit to `config.json` reloaded within a second.
+MSVC's own front-end remains untested, as this environment has no Windows host.
+You MUST run the suite under MSVC before tagging a release. Every compile-time
+claim is a `static_assert`, so a divergence fails the build loudly.
 
 ## Headers
 
