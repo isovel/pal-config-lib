@@ -214,3 +214,30 @@ TEST_CASE("a key no field claims is carried forward", "[write]")
             "    \"legacy\": {\"a\":1}\n"
             "}\n");
 }
+
+namespace
+{
+    struct Bounds
+    {
+        float Min = 0.0f;
+        float Max = 30.0f;
+    };
+
+    inline constexpr auto kBounds = PalCfg::Schema<Bounds>("PerkyPals")
+                                        .FieldPair("onsetDelayMin", &Bounds::Min, "onsetDelayMax", &Bounds::Max)
+                                        .Help("Seconds a pal rests at zero.");
+
+    inline constexpr auto kBoundsFields = kBounds.Flatten();
+} // namespace
+
+TEST_CASE("a pair's shared help is written once, above its lower bound", "[write]")
+{
+    const Bounds settings{};
+
+    REQUIRE(PalCfg::RenderDocument(kBoundsFields, settings) ==
+            "{\n"
+            "    // Seconds a pal rests at zero.\n"
+            "    \"onsetDelayMin\": 0.0,\n"
+            "    \"onsetDelayMax\": 30.0\n"
+            "}\n");
+}

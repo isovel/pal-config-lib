@@ -109,8 +109,9 @@ namespace PalCfg
                     AppendComment(out, text, indent);
                 };
 
-                for (const auto& field : fields)
+                for (std::size_t i = 0; i < N; ++i)
                 {
+                    const FieldRuntime& field = fields[i];
                     if (field.meta.key == nullptr) continue;
                     if (field.ops == nullptr || field.ops->format == nullptr) continue;
 
@@ -122,7 +123,12 @@ namespace PalCfg
 
                     if (dot == std::string_view::npos)
                     {
-                        Document(field.meta.help, Separate());
+                        // A .FieldPair() shares one help text between its two
+                        // fields; it is written once, above the lower bound.
+                        const bool upperOfPair = i > 0 && fields[i - 1].meta.pairPartner == i;
+
+                        const bool wasFirst = Separate();
+                        if (!upperOfPair) Document(field.meta.help, wasFirst);
                         out += indent;
                         AppendJsonString(out, rest);
                         out += ": ";
