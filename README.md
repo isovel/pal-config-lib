@@ -14,7 +14,7 @@ out as a documented file, and keeps it live while the game runs. A mod finds its
 own config beside its DLL and routes diagnostics into its own log. The menu
 registry comes next. See the roadmap.
 
-PerkyPals is migrated: its `include/ConfigSchema.hpp` declares 44 fields, its
+PerkyPals is migrated: its `include/ConfigSchema.hpp` declares 27 fields, its
 `config.default.json` is generated from them, and that file is checked in here
 as a fixture that loads through a mirror schema reporting nothing and leaving
 no key unclaimed.
