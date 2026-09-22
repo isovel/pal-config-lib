@@ -104,6 +104,10 @@ namespace PalCfg
         // `boundMemberPtr`. Null for a type whose ValueTraits declares no Write,
         // which keeps a read-only trait out of a generated file.
         void (*format)(const void* base, const void* boundMemberPtr, std::string& out) = nullptr;
+
+        // For a List or Set, the kind of one element; Unknown otherwise. A
+        // settings menu reads this to pick a widget for the list.
+        Kind elementKind = Kind::Unknown;
     };
 
     // Flat, homogeneous descriptor. One per field, consumed by the loader, the

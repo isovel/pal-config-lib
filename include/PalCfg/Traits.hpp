@@ -243,6 +243,24 @@ namespace PalCfg
 
             return Outcome();
         }
+
+        template <class M>
+        struct ElementKindOf
+        {
+            static constexpr Kind kValue = Kind::Unknown;
+        };
+
+        template <class E, class A>
+        struct ElementKindOf<std::vector<E, A>>
+        {
+            static constexpr Kind kValue = ValueTraits<E>::kKind;
+        };
+
+        template <class E, class H, class Eq, class A>
+        struct ElementKindOf<std::unordered_set<E, H, Eq, A>>
+        {
+            static constexpr Kind kValue = ValueTraits<E>::kKind;
+        };
     } // namespace Detail
 
     template <class Element>
@@ -439,6 +457,6 @@ namespace PalCfg
 
         static constexpr auto kFormatHook = Writable<M> ? &Format : nullptr;
 
-        static inline constexpr FieldOps kInstance{ValueTraits<M>::kKind, &Parse, kSwapHook, kFormatHook};
+        static inline constexpr FieldOps kInstance{ValueTraits<M>::kKind, &Parse, kSwapHook, kFormatHook, Detail::ElementKindOf<M>::kValue};
     };
 } // namespace PalCfg

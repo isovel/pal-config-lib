@@ -1,6 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <string>
 #include <string_view>
+#include <vector>
 
 #include <PalCfg/Schema.hpp>
 
@@ -114,4 +116,28 @@ TEST_CASE("the presentation and parsing flags default off and are set on request
     CHECK(flagged[0].meta.hidden);
     CHECK(flagged[0].meta.advanced);
     CHECK(std::string_view{flagged[0].meta.help} == "Weight per second while rising");
+}
+
+namespace
+{
+    struct Kinds
+    {
+        std::vector<int> Ints;
+        std::vector<std::string> Names;
+        float Rate = 0.0f;
+    };
+
+    inline constexpr auto kKinds = PalCfg::Schema<Kinds>("Kinds")
+                                       .Field("ints", &Kinds::Ints)
+                                       .Field("names", &Kinds::Names)
+                                       .Field("rate", &Kinds::Rate);
+    inline constexpr auto kKindFields = kKinds.Flatten();
+}
+
+TEST_CASE("a list field's ops name its element kind")
+{
+    CHECK(kKindFields[0].ops->kind == PalCfg::Kind::List);
+    CHECK(kKindFields[0].ops->elementKind == PalCfg::Kind::Int);
+    CHECK(kKindFields[1].ops->elementKind == PalCfg::Kind::String);
+    CHECK(kKindFields[2].ops->elementKind == PalCfg::Kind::Unknown);
 }
