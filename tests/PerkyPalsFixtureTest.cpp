@@ -11,12 +11,14 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <fstream>
+#include <iterator>
 #include <sstream>
 #include <string>
 #include <vector>
 
 #include <PalCfg/Load.hpp>
 #include <PalCfg/Schema.hpp>
+#include <PalCfg/SchemaJson.hpp>
 #include <PalCfg/Write.hpp>
 
 namespace
@@ -246,4 +248,13 @@ TEST_CASE("a rendered document loads back to the same settings")
     CHECK(result.unknownKeys.empty());
     CHECK(sink.All().empty());
     CHECK(reloaded == loaded);
+}
+
+TEST_CASE("the PerkyPals schema JSON matches its fixture")
+{
+    std::ifstream file(std::string{PALCFG_FIXTURE_DIR} + "/perkypals.schema.json", std::ios::binary);
+    REQUIRE(file.is_open());
+    std::string expected((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+    CHECK(PalCfg::BuildSchemaJson<Settings>(kSchema.ModId(), kFields) == expected);
 }

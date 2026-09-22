@@ -8,6 +8,7 @@ FetchContent_MakeAvailable(Catch2)
 
 add_executable(palcfg_tests
     SchemaTest.cpp
+    SchemaJsonTest.cpp
     JsoncTest.cpp
     DocumentTest.cpp
     UtfTest.cpp

@@ -37,6 +37,7 @@ add_library(palcfg_core STATIC
     "src/core/Coerce.cpp"
     "src/core/Diagnostics.cpp"
     "src/core/Write.cpp"
+    "src/core/SchemaJson.cpp"
     "src/core/File.cpp"
     "src/core/LogSink.cpp"
     "src/core/Paths.cpp"
