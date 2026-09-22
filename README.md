@@ -419,6 +419,19 @@ DynamicPals polled at 1 Hz for the same reason this does: a watcher thread on a
 Windows handle delivers its notifications on a thread that must not touch the
 game.
 
+## Menu integration
+
+A mod opts in with two lines after `LoadOrCreate()`:
+
+```cpp
+static const std::string kSchemaJson = PalCfg::BuildSchemaJson<Settings>(kSchema.ModId(), kFields);
+PalCfg::RegistryLink<Settings, kFields.size()> Link(reinterpret_cast<const void*>(&Initialize),
+                                                    "../../PalConfigMenu/dlls/PalCfgRegistry.dll");
+Link.Attach(*ConfigFile, kSchemaJson.c_str());
+```
+
+The `ConfigFile` constructor takes a third argument: the mod id from `kSchema.ModId()`. When the menu mod is absent the link reports one Note and every call is a no-op. A commit from the menu runs `ConfigFile::ApplyDocument`, which saves the file and fires `SetOnReload`, so route the mod's publish step through that callback. `ApplyDocument` runs on whichever thread the menu calls from, so the reload callback may arrive off the game thread; the menu's calling contract is the game thread. The ABI and the schema JSON are described in `docs/superpowers/specs/2026-09-21-registry-design.md`.
+
 ## Fitting into a mod
 
 ### Finding the file
@@ -519,6 +532,7 @@ claim is a `static_assert`, so a divergence fails the build loudly.
 | Header | Holds |
 | --- | --- |
 | `Schema.hpp` | `Schema<T>` builder, `Flatten()` |
+| `SchemaJson.hpp` | `BuildSchemaJson<T>` |
 | `Field.hpp` | `FieldMeta`, `FieldOps`, `FieldRuntime`, `Kind` |
 | `Traits.hpp` | `ValueTraits`, `EnumNames`, `Writable` |
 | `Load.hpp` | `LoadFromText`, `LoadFields` |
@@ -528,6 +542,7 @@ claim is a `static_assert`, so a divergence fails the build loudly.
 | `Write.hpp` | `RenderDocument`, `WriteOptions`, `AppendJsonString`, `AppendJsonNumber` |
 | `Generate.hpp` | `GenerateFile`, `GenerateMain`, `GenerateResult` |
 | `ConfigFile.hpp` | `ConfigFile<T, N>` |
+| `Registry.hpp` | `RegistryLink<T,N>`, `ProbeRegistry`, `ReleaseRegistry` |
 | `File.hpp` | `WriteFileIfChanged`, `ReadFileText`, `StatFile`, `FileStamp` |
 | `Paths.hpp` | `ResolveAgainst` |
 | `Win32.hpp` | `ModuleDirectory`, `ModuleRelativePath` |
@@ -563,7 +578,8 @@ target_link_libraries(MyMod PRIVATE PalCfg::Core)
 | 7 ✅ | `ConfigFile`: polled hot reload, an atomic live snapshot, and `Save()` that does not trigger itself |
 | 8 ✅ | The Win32 platform layer: module-relative paths and a formatting log sink |
 | 9 ✅ | PerkyPals migrated: `src/Config.cpp` is under 100 lines over `ConfigFile`, `config.default.json` is a build artifact |
-| next | The optional C-ABI registry that lets a settings menu enumerate every mod |
+| 10 ✅ | `PalCfgRegistry.dll` and `RegistryLink`: a C ABI over JSON strings so a settings menu enumerates, reads and commits every mod's document |
+| next | The settings menu itself, in `pal-config-menu` |
 
 On-disk format is JSONC. Comments are load-bearing: the schema's `.Help()` text
 regenerates them, so a menu writing settings back preserves a config file's
