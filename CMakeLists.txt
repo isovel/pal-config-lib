@@ -9,6 +9,7 @@ endif()
 
 option(PALCFG_BUILD_TESTS "Build host-native tests" ${PALCFG_IS_TOP_LEVEL})
 option(PALCFG_STANDALONE "Apply the UE4SS build-type default" OFF)
+option(PALCFG_BUILD_REGISTRY "Build the PalCfgRegistry shared library" OFF)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -55,6 +56,10 @@ target_compile_features(palcfg_core PUBLIC cxx_std_23)
 add_library(PalCfg::Core ALIAS palcfg_core)
 
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/PalCfgGenerate.cmake")
+
+if(PALCFG_BUILD_REGISTRY)
+    add_subdirectory(registry)
+endif()
 
 if(PALCFG_BUILD_TESTS)
     enable_testing()

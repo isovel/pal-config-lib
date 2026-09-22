@@ -28,6 +28,10 @@ add_executable(palcfg_tests
     CustomTraitTest.cpp
 )
 target_link_libraries(palcfg_tests PRIVATE PalCfg::Core Catch2::Catch2WithMain)
+if(PALCFG_BUILD_REGISTRY)
+    target_sources(palcfg_tests PRIVATE RegistryTest.cpp)
+    target_link_libraries(palcfg_tests PRIVATE PalCfg::Registry)
+endif()
 set(PALCFG_GENERATED_CONFIG "${CMAKE_CURRENT_BINARY_DIR}/example.config.json")
 palcfg_add_generator(palcfg_example_gen
     SOURCES generator/main.cpp
