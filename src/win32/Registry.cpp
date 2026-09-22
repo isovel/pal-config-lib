@@ -35,10 +35,11 @@ namespace PalCfg
         out = {};
         libraryHandle = nullptr;
 
-        // By name first: when another mod or the menu loaded it already, this
-        // returns that module and takes a reference, so the exports stay mapped
-        // for as long as this link holds them.
-        HMODULE module = LoadLibraryW(kLibraryName);
+        // By name first, but only among modules already loaded: flags 0 takes a
+        // reference and never searches the disk, so this cannot bind a copy the
+        // menu did not ship.
+        HMODULE module = nullptr;
+        GetModuleHandleExW(0, kLibraryName, &module);
         if (module == nullptr)
         {
             std::string path;

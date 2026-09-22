@@ -14,6 +14,7 @@
 #include <cstring>
 #include <string>
 #include <string_view>
+#include <type_traits>
 
 #include <PalCfg/ConfigFile.hpp>
 #include <PalCfg/Diagnostics.hpp>
@@ -36,6 +37,9 @@ namespace PalCfg
         void (*freeText)(char* text) = nullptr;
     };
 
+    static_assert(std::is_standard_layout_v<RegistryModDesc> && sizeof(RegistryModDesc) == 7 * sizeof(void*),
+                  "RegistryModDesc must mirror PalCfgModDesc");
+
     struct RegistryExports
     {
         std::uint32_t (*abi)() = nullptr;
@@ -43,10 +47,10 @@ namespace PalCfg
         void (*unregisterMod)(void* mod) = nullptr;
     };
 
-    // Takes a reference on PalCfgRegistry.dll, loading it from
-    // `relativeToModule` against the module holding `addressInModule` when it
-    // is not yet in the process. False when absent or on ABI mismatch, leaving
-    // `out` empty and no reference held.
+    // Takes a reference on the already-loaded library, else loads it from
+    // `relativeToModule` against the module holding `addressInModule`. False
+    // when absent or on ABI mismatch, leaving `out` empty and no reference
+    // held.
     bool ProbeRegistry(const void* addressInModule,
                        std::string_view relativeToModule,
                        RegistryExports& out,
@@ -55,6 +59,11 @@ namespace PalCfg
     // Releases the reference ProbeRegistry took; null is a no-op.
     void ReleaseRegistry(void* libraryHandle);
 
+    // Destroy this from the mod's unload path (a UE4SS CppUserModBase
+    // destructor or on_unload), before the ConfigFile it points at, and never
+    // from a static destructor: a namespace-scope static runs at
+    // DLL_PROCESS_DETACH, where FreeLibrary is unsafe and the registry DLL may
+    // already be gone. Declare it after the ConfigFile.
     template <class T, std::size_t N>
     class RegistryLink
     {

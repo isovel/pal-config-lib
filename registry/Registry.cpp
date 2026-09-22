@@ -21,8 +21,19 @@ struct PalCfgMod
 
 namespace
 {
-    std::mutex g_mutex;
-    std::vector<std::unique_ptr<PalCfgMod>> g_mods;
+    struct State
+    {
+        std::mutex mutex;
+        std::vector<std::unique_ptr<PalCfgMod>> mods;
+    };
+
+    // Never destroyed, so a mod unregistering during process teardown finds a
+    // live table.
+    State& Table()
+    {
+        static State& state = *new State{};
+        return state;
+    }
 
     constexpr const char* kNothing =
         R"([{"severity":"Error","field":"","message":"mod returned nothing"}])";
@@ -49,7 +60,8 @@ namespace
 
     PalCfgMod* At(uint32_t index)
     {
-        return index < g_mods.size() ? g_mods[index].get() : nullptr;
+        auto& mods = Table().mods;
+        return index < mods.size() ? mods[index].get() : nullptr;
     }
 }
 
@@ -69,8 +81,9 @@ extern "C"
             return nullptr;
         }
 
-        std::lock_guard lock(g_mutex);
-        for (const auto& mod : g_mods)
+        State& state = Table();
+        std::lock_guard lock(state.mutex);
+        for (const auto& mod : state.mods)
         {
             if (mod->name == desc->name) return nullptr;
         }
@@ -84,7 +97,7 @@ extern "C"
         mod->freeText = desc->freeText;
 
         PalCfgMod* handle = mod.get();
-        g_mods.push_back(std::move(mod));
+        state.mods.push_back(std::move(mod));
         return handle;
     }
 
@@ -92,12 +105,13 @@ extern "C"
     {
         if (mod == nullptr) return;
 
-        std::lock_guard lock(g_mutex);
-        for (auto it = g_mods.begin(); it != g_mods.end(); ++it)
+        State& state = Table();
+        std::lock_guard lock(state.mutex);
+        for (auto it = state.mods.begin(); it != state.mods.end(); ++it)
         {
             if (it->get() == mod)
             {
-                g_mods.erase(it);
+                state.mods.erase(it);
                 return;
             }
         }
@@ -105,27 +119,31 @@ extern "C"
 
     uint32_t PalCfgRegistry_Count(void)
     {
-        std::lock_guard lock(g_mutex);
-        return static_cast<uint32_t>(g_mods.size());
+        State& state = Table();
+        std::lock_guard lock(state.mutex);
+        return static_cast<uint32_t>(state.mods.size());
     }
 
     const char* PalCfgRegistry_Name(uint32_t index)
     {
-        std::lock_guard lock(g_mutex);
+        State& state = Table();
+        std::lock_guard lock(state.mutex);
         const PalCfgMod* mod = At(index);
         return mod != nullptr ? mod->name.c_str() : nullptr;
     }
 
     const char* PalCfgRegistry_Schema(uint32_t index)
     {
-        std::lock_guard lock(g_mutex);
+        State& state = Table();
+        std::lock_guard lock(state.mutex);
         const PalCfgMod* mod = At(index);
         return mod != nullptr ? mod->schema.c_str() : nullptr;
     }
 
     char* PalCfgRegistry_GetDocument(uint32_t index)
     {
-        std::lock_guard lock(g_mutex);
+        State& state = Table();
+        std::lock_guard lock(state.mutex);
         const PalCfgMod* mod = At(index);
         if (mod == nullptr) return nullptr;
         return Take(*mod, mod->getDocument(mod->user));
@@ -135,7 +153,8 @@ extern "C"
     {
         if (json == nullptr) return nullptr;
 
-        std::lock_guard lock(g_mutex);
+        State& state = Table();
+        std::lock_guard lock(state.mutex);
         const PalCfgMod* mod = At(index);
         if (mod == nullptr) return nullptr;
         return Take(*mod, mod->setDocument(mod->user, json));

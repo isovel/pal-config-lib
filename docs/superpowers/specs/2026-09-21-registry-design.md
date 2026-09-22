@@ -54,8 +54,8 @@ void         PalCfgRegistry_Free(char*);
 Rules:
 
 - Every string is UTF-8 and NUL-terminated.
-- `Register` returns null on ABI mismatch, null `name`, duplicate name, or a
-  null `getDocument`, `setDocument` or `freeText`.
+- `Register` returns null on ABI mismatch, null `name` or `schemaJson`,
+  duplicate name, or a null `getDocument`, `setDocument` or `freeText`.
 - `Name` and `Schema` return pointers valid until the entry is unregistered.
   `GetDocument` and `SetDocument` return registry-owned copies the caller frees
   with `PalCfgRegistry_Free`.
@@ -121,6 +121,10 @@ Link.Attach(*ConfigFile, kSchemaJson);      // after LoadOrCreate()
   thunk, and calls `Register`.
 - The destructor calls `Unregister`, then `FreeLibrary` when the link loaded
   the DLL. A UE4SS mod restart therefore leaves no dangling entry.
+- The mod destroys `Link` from its own unload path (a `CppUserModBase`
+  destructor or `on_unload`), before it destroys the `ConfigFile`, and never
+  from a static destructor: that runs at `DLL_PROCESS_DETACH`, where
+  `FreeLibrary` is unsafe and the registry DLL may already be gone.
 
 `ConfigFile` gains one method:
 

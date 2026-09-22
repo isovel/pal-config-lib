@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstdlib>
 #include <cstring>
 #include <string>
 
@@ -51,6 +52,50 @@ namespace
         PalCfgModDesc Desc(const char* name)
         {
             return PalCfgModDesc{PALCFG_REGISTRY_ABI, name, R"({"name":"x","fields":[]})", this, &Get, &Set, &Free};
+        }
+    };
+
+    // A second fake mod whose strings come from malloc/free, so a registry
+    // that mixes up which mod's freeText belongs to which buffer is caught.
+    struct MallocMod
+    {
+        std::string document = R"({"count": 2})";
+        std::string lastSet;
+        int allocated = 0;
+        int freed = 0;
+
+        char* Dup(const std::string& text)
+        {
+            ++allocated;
+            char* out = static_cast<char*>(std::malloc(text.size() + 1));
+            std::memcpy(out, text.c_str(), text.size() + 1);
+            return out;
+        }
+
+        static char* Get(void* user)
+        {
+            auto& self = *static_cast<MallocMod*>(user);
+            return self.Dup(self.document);
+        }
+
+        static char* Set(void* user, const char* json)
+        {
+            auto& self = *static_cast<MallocMod*>(user);
+            self.lastSet = json;
+            return self.Dup("[]");
+        }
+
+        static void Free(char* text)
+        {
+            ++s_freed;
+            std::free(text);
+        }
+
+        static inline int s_freed = 0;
+
+        PalCfgModDesc Desc(const char* name)
+        {
+            return PalCfgModDesc{PALCFG_REGISTRY_ABI, name, R"({"name":"y","fields":[]})", this, &Get, &Set, &Free};
         }
     };
 
@@ -134,6 +179,34 @@ TEST_CASE("documents are copied into registry memory and mod memory is freed by 
     CHECK(a.lastSet == R"({"count": 2})");
     CHECK(FakeMod::s_freed == 2);
     PalCfgRegistry_Free(result);
+}
+
+TEST_CASE("each mod's buffers go back to its own allocator")
+{
+    FakeMod a;
+    MallocMod b;
+    FakeMod::s_freed = 0;
+    MallocMod::s_freed = 0;
+    auto da = a.Desc("A");
+    auto db = b.Desc("B");
+    Registration ra{PalCfgRegistry_Register(&da)};
+    Registration rb{PalCfgRegistry_Register(&db)};
+
+    char* docA = PalCfgRegistry_GetDocument(0);
+    REQUIRE(docA != nullptr);
+    CHECK(std::string{docA} == R"({"count": 1})");
+    CHECK(a.allocated == 1);
+    CHECK(FakeMod::s_freed == 1);
+    CHECK(MallocMod::s_freed == 0);
+    PalCfgRegistry_Free(docA);
+
+    char* docB = PalCfgRegistry_GetDocument(1);
+    REQUIRE(docB != nullptr);
+    CHECK(std::string{docB} == R"({"count": 2})");
+    CHECK(b.allocated == 1);
+    CHECK(FakeMod::s_freed == 1);
+    CHECK(MallocMod::s_freed == 1);
+    PalCfgRegistry_Free(docB);
 }
 
 TEST_CASE("out-of-range indices return null")

@@ -421,7 +421,7 @@ game.
 
 ## Menu integration
 
-A mod opts in with two lines after `LoadOrCreate()`:
+A mod opts in with three lines after `LoadOrCreate()`:
 
 ```cpp
 static const std::string kSchemaJson = PalCfg::BuildSchemaJson<Settings>(kSchema.ModId(), kFields);
@@ -430,7 +430,7 @@ PalCfg::RegistryLink<Settings, kFields.size()> Link(reinterpret_cast<const void*
 Link.Attach(*ConfigFile, kSchemaJson.c_str());
 ```
 
-The `ConfigFile` constructor takes a third argument: the mod id from `kSchema.ModId()`. When the menu mod is absent the link reports one Note and every call is a no-op. A commit from the menu runs `ConfigFile::ApplyDocument`, which saves the file and fires `SetOnReload`, so route the mod's publish step through that callback. `ApplyDocument` runs on whichever thread the menu calls from, so the reload callback may arrive off the game thread; the menu's calling contract is the game thread. The ABI and the schema JSON are described in `docs/superpowers/specs/2026-09-21-registry-design.md`.
+The `ConfigFile` constructor takes a third argument: the mod id from `kSchema.ModId()`. When the menu mod is absent the link reports one Note and every call is a no-op. A commit from the menu runs `ConfigFile::ApplyDocument`, which saves the file and fires `SetOnReload`, so route the mod's publish step through that callback. The menu commits on the game thread, so `ApplyDocument` and the reload callback run there. A menu commit rotates `config.json.bak` on the way in, exactly like any other save. A file that is unparseable on disk makes `ApplyDocument` report "could not write" for the commit, since the writer refuses to merge a broken file. Destroy `Link` from the mod's unload path, before the `ConfigFile`, and never from a static destructor, whose teardown can run after the registry DLL is already gone. The ABI and the schema JSON are described in `docs/superpowers/specs/2026-09-21-registry-design.md`.
 
 ## Fitting into a mod
 
