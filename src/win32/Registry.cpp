@@ -35,20 +35,18 @@ namespace PalCfg
         out = {};
         libraryHandle = nullptr;
 
-        // Already in the process: another mod or the menu loaded it first.
-        HMODULE module = GetModuleHandleW(kLibraryName);
-        if (module != nullptr)
+        // By name first: when another mod or the menu loaded it already, this
+        // returns that module and takes a reference, so the exports stay mapped
+        // for as long as this link holds them.
+        HMODULE module = LoadLibraryW(kLibraryName);
+        if (module == nullptr)
         {
-            if (Resolve(module, out)) return true;
-            out = {};
-            return false;
+            std::string path;
+            if (!ModuleRelativePath(addressInModule, relativeToModule, path)) return false;
+
+            module = LoadLibraryW(Utf8ToWide(path).c_str());
+            if (module == nullptr) return false;
         }
-
-        std::string path;
-        if (!ModuleRelativePath(addressInModule, relativeToModule, path)) return false;
-
-        module = LoadLibraryW(Utf8ToWide(path).c_str());
-        if (module == nullptr) return false;
 
         if (!Resolve(module, out))
         {

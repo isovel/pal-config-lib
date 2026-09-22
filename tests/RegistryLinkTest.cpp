@@ -33,6 +33,20 @@ TEST_CASE("a link with no registry stays detached and every call is a no-op")
     CHECK(sink.Count(PalCfg::Severity::Note) == 1);
 }
 
+TEST_CASE("a ConfigFile with an empty mod id never registers")
+{
+    PalCfg::ConfigFile<Settings, kFields.size()> file(kFields, "/nonexistent/link.json");
+    REQUIRE(std::string{file.ModId()}.empty());
+    PalCfg::CollectingSink sink;
+    file.SetSink(sink);
+
+    PalCfg::RegistryLink<Settings, kFields.size()> link(reinterpret_cast<const void*>(&kFields),
+                                                        "../../PalConfigMenu/dlls/PalCfgRegistry.dll");
+    link.Attach(file, "{}");
+    CHECK_FALSE(link.Attached());
+    CHECK(sink.Count(PalCfg::Severity::Note) == 1);
+}
+
 TEST_CASE("the link's thunks round-trip through ConfigFile")
 {
     const auto path = std::filesystem::temp_directory_path() / "palcfg-tests" / "link.json";

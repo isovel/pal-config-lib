@@ -5,6 +5,9 @@
 //
 // No C++ type crosses the DLL edge: the registry sees three function pointers
 // and JSON text. Windows.h stays inside src/win32/Registry.cpp.
+//
+// SchemaJson.hpp is included so a mod needs one header for schema JSON plus
+// the link.
 
 #include <cstddef>
 #include <cstdint>
@@ -40,15 +43,16 @@ namespace PalCfg
         void (*unregisterMod)(void* mod) = nullptr;
     };
 
-    // Finds PalCfgRegistry.dll already in the process, else loads it from
-    // `relativeToModule` against the module holding `addressInModule`. False
-    // when absent or on ABI mismatch, leaving `out` empty.
+    // Takes a reference on PalCfgRegistry.dll, loading it from
+    // `relativeToModule` against the module holding `addressInModule` when it
+    // is not yet in the process. False when absent or on ABI mismatch, leaving
+    // `out` empty and no reference held.
     bool ProbeRegistry(const void* addressInModule,
                        std::string_view relativeToModule,
                        RegistryExports& out,
                        void*& libraryHandle);
 
-    // Frees a library ProbeRegistry loaded; null is a no-op.
+    // Releases the reference ProbeRegistry took; null is a no-op.
     void ReleaseRegistry(void* libraryHandle);
 
     template <class T, std::size_t N>
@@ -62,6 +66,7 @@ namespace PalCfg
             m_attached = ProbeRegistry(addressInModule, relativeToModule, m_exports, m_library);
         }
 
+        // Unregisters, then releases its reference on the registry library.
         ~RegistryLink()
         {
             if (m_registration != nullptr) m_exports.unregisterMod(m_registration);
@@ -77,13 +82,22 @@ namespace PalCfg
         // BuildSchemaJson at startup is the expected source.
         void Attach(File& file, const char* schemaJson)
         {
+            if (m_registration != nullptr) return;
+
             if (!m_attached)
             {
                 file.ReportNote("no settings registry; menu integration is off");
                 return;
             }
 
-            m_desc.name = ModName(file);
+            const char* name = ModName(file);
+            if (name == nullptr || *name == '\0')
+            {
+                file.ReportNote("no mod id on the ConfigFile; menu integration is off");
+                return;
+            }
+
+            m_desc.name = name;
             m_desc.schemaJson = schemaJson;
             m_desc.user = &file;
             m_desc.getDocument = &GetDocumentThunk;
@@ -97,15 +111,39 @@ namespace PalCfg
             }
         }
 
+        // The registry calls these from extern "C" under its mutex, so no
+        // exception may cross.
         static char* GetDocumentThunk(void* user)
         {
-            return Copy(static_cast<File*>(user)->Document());
+            try
+            {
+                return Copy(static_cast<File*>(user)->Document());
+            }
+            catch (...)
+            {
+                return nullptr;
+            }
         }
 
         static char* SetDocumentThunk(void* user, const char* json)
         {
-            auto& file = *static_cast<File*>(user);
-            return Copy(DiagnosticsToJson(file.ApplyDocument(json != nullptr ? json : "")));
+            try
+            {
+                auto& file = *static_cast<File*>(user);
+                return Copy(DiagnosticsToJson(file.ApplyDocument(json != nullptr ? json : "")));
+            }
+            catch (...)
+            {
+                try
+                {
+                    return Copy(DiagnosticsToJson(
+                        {{Severity::Error, {}, "the mod threw while applying the document"}}));
+                }
+                catch (...)
+                {
+                    return nullptr;
+                }
+            }
         }
 
         static void FreeThunk(char* text) { delete[] text; }
