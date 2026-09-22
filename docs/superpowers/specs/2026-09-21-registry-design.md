@@ -15,7 +15,7 @@ text.
 | Decision | Choice |
 | --- | --- |
 | Granularity | Whole document. The menu edits a JSON document and commits it once. Per-field set can be layered later inside the mod with no ABI change. |
-| Discovery | The menu mod ships `PalCfgRegistry.dll`. A mod probes `GetModuleHandleW`, then `LoadLibraryW` on `<own module>/../../PalConfigMenu/dlls/PalCfgRegistry.dll`, and no-ops when absent. |
+| Discovery | The menu mod ships `PalCfgRegistry.dll`. A mod probes `GetModuleHandleExW`, then `LoadLibraryW` on `<own module>/../../PalConfigMenu/dlls/PalCfgRegistry.dll`, and no-ops when absent. |
 | Threading | Menu and mods run on the game thread. Callbacks run synchronously on the caller's thread. The registry table is guarded by one mutex. |
 | Allocation | No allocator crosses the edge. The registry copies mod strings into its own heap; `PalCfgRegistry_Free` frees registry memory, `freeText` frees mod memory. |
 | Dependencies | The registry DLL depends on nothing: no PalCfg core, no nlohmann, no UE4SS. |
@@ -112,7 +112,7 @@ Link.Attach(*ConfigFile, kSchemaJson);      // after LoadOrCreate()
 
 `RegistryLink`:
 
-- The constructor probes `GetModuleHandleW(L"PalCfgRegistry.dll")`, then
+- The constructor probes `GetModuleHandleExW(0, L"PalCfgRegistry.dll", &module)`, then
   `LoadLibraryW` on the path resolved by `ModuleRelativePath`. Absent or ABI
   mismatch leaves it detached, reports a `Note` through the mod's sink, and
   every later call is a no-op.
