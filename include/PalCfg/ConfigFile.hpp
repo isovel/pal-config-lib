@@ -19,12 +19,14 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include <PalCfg/Diagnostics.hpp>
 #include <PalCfg/Field.hpp>
 #include <PalCfg/File.hpp>
 #include <PalCfg/Generate.hpp>
 #include <PalCfg/Load.hpp>
+#include <PalCfg/Write.hpp>
 
 namespace PalCfg
 {
@@ -131,6 +133,41 @@ namespace PalCfg
             m_stamp = StatFile(m_path);
 
             return true;
+        }
+
+        // Parses `json` as a full document, saves it, puts it live and fires the
+        // reload callback. Returns the diagnostics; nothing is written on an
+        // Error.
+        std::vector<Diagnostic> ApplyDocument(std::string json)
+        {
+            CollectingSink collected;
+            T next{};
+            const LoadResult result = LoadFromText(m_fields, std::move(json), next, collected);
+
+            for (const auto& diagnostic : collected.All())
+            {
+                if (m_sink != nullptr) m_sink->Report(diagnostic);
+            }
+
+            if (!result.parsed || collected.Has(Severity::Error)) return collected.All();
+
+            if (!Save(next))
+            {
+                auto all = collected.All();
+                all.push_back({Severity::Error, {}, "could not write " + m_path});
+                return all;
+            }
+
+            if (m_onReload) m_onReload(*Get());
+            return collected.All();
+        }
+
+        // The live value as JSON without help comments, for a menu to edit.
+        std::string Document() const
+        {
+            WriteOptions options = m_options;
+            options.includeHelp = false;
+            return RenderDocument(m_fields, *Get(), options);
         }
 
       private:

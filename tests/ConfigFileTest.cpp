@@ -3,8 +3,10 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <PalCfg/ConfigFile.hpp>
 #include <PalCfg/Schema.hpp>
@@ -213,4 +215,75 @@ TEST_CASE("a file rewritten with the same bytes is not a reload", "[reload]")
 
     CHECK_FALSE(config.Tick(kStart + 1500ms));
     CHECK(reloads == 0);
+}
+
+TEST_CASE("ApplyDocument saves, goes live and fires the reload callback")
+{
+    const auto path = TempPath("apply.json");
+    Put(path, "{\n    \"enabled\": true,\n    \"count\": 5,\n    \"extra\": 1\n}\n");
+
+    PalCfg::ConfigFile<Settings, kFields.size()> file(kFields, path.string());
+    REQUIRE(file.Load());
+
+    int reloads = 0;
+    file.SetOnReload([&](const Settings&) { ++reloads; });
+
+    const auto diagnostics = file.ApplyDocument(R"({"enabled": false, "count": 9})");
+
+    CHECK(diagnostics.empty());
+    CHECK(file.Get()->Enabled == false);
+    CHECK(file.Get()->Count == 9);
+    CHECK(reloads == 1);
+
+    std::ifstream in(path);
+    const std::string written((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    CHECK(written.find("\"count\": 9") != std::string::npos);
+    CHECK(written.find("\"extra\": 1") != std::string::npos);
+}
+
+TEST_CASE("ApplyDocument writes nothing on an Error")
+{
+    const auto path = TempPath("apply-error.json");
+    Put(path, "{\n    \"count\": 5\n}\n");
+
+    PalCfg::ConfigFile<Settings, kFields.size()> file(kFields, path.string());
+    REQUIRE(file.Load());
+
+    const auto diagnostics = file.ApplyDocument("not json");
+
+    REQUIRE(diagnostics.size() >= 1);
+    CHECK(diagnostics.front().severity == PalCfg::Severity::Error);
+    CHECK(file.Get()->Count == 5);
+
+    std::ifstream in(path);
+    const std::string written((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    CHECK(written.find("\"count\": 5") != std::string::npos);
+}
+
+TEST_CASE("ApplyDocument reports a warning yet still applies")
+{
+    const auto path = TempPath("apply-warn.json");
+    Put(path, "{}\n");
+
+    PalCfg::ConfigFile<Settings, kFields.size()> file(kFields, path.string());
+    REQUIRE(file.Load());
+
+    const auto diagnostics = file.ApplyDocument(R"({"count": "many"})");
+
+    REQUIRE(diagnostics.size() >= 1);
+    CHECK(diagnostics.front().severity == PalCfg::Severity::Warning);
+    CHECK(file.Get()->Count == 5);
+}
+
+TEST_CASE("Document renders the live value without comments")
+{
+    const auto path = TempPath("document.json");
+    Put(path, R"({"enabled": false, "count": 2})");
+
+    PalCfg::ConfigFile<Settings, kFields.size()> file(kFields, path.string());
+    REQUIRE(file.Load());
+
+    const std::string json = file.Document();
+    CHECK(json.find("//") == std::string::npos);
+    CHECK(json.find("\"count\": 2") != std::string::npos);
 }
