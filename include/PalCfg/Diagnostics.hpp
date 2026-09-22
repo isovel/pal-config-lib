@@ -86,6 +86,12 @@ namespace PalCfg
         std::vector<Diagnostic> m_all;
     };
 
+    // "Note", "Warning" or "Error".
+    const char* SeverityName(Severity severity);
+
+    // A JSON array of {"severity","field","message"} objects; "[]" when empty.
+    std::string DiagnosticsToJson(const std::vector<Diagnostic>& diagnostics);
+
     // Everything a field's traits need while reading. One struct, so adding to it
     // later leaves every ValueTraits specialisation compiling.
     struct ReadContext

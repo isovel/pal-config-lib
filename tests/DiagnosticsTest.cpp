@@ -170,3 +170,17 @@ TEST_CASE("a list read from a separated string is a note")
     REQUIRE(o.sink.Count(PalCfg::Severity::Note) == 1);
     CHECK(o.sink.All()[0].field == "morphTargets");
 }
+
+TEST_CASE("DiagnosticsToJson renders an array the menu can show")
+{
+    const std::vector<PalCfg::Diagnostic> none;
+    CHECK(PalCfg::DiagnosticsToJson(none) == "[]");
+
+    const std::vector<PalCfg::Diagnostic> some{
+        {PalCfg::Severity::Warning, "count", "kept its default"},
+        {PalCfg::Severity::Error, "", "bad \"quote\""},
+    };
+    CHECK(PalCfg::DiagnosticsToJson(some) ==
+          R"([{"severity":"Warning","field":"count","message":"kept its default"},)"
+          R"({"severity":"Error","field":"","message":"bad \"quote\""}])");
+}

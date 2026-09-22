@@ -8,6 +8,39 @@
 #include <string>
 
 #include <PalCfg/Value.hpp>
+#include <PalCfg/Write.hpp>
+
+namespace PalCfg
+{
+    const char* SeverityName(Severity severity)
+    {
+        switch (severity)
+        {
+            case Severity::Note: return "Note";
+            case Severity::Warning: return "Warning";
+            case Severity::Error: return "Error";
+        }
+        return "Note";
+    }
+
+    std::string DiagnosticsToJson(const std::vector<Diagnostic>& diagnostics)
+    {
+        std::string out = "[";
+        for (std::size_t i = 0; i < diagnostics.size(); ++i)
+        {
+            if (i > 0) out += ',';
+            out += R"({"severity":")";
+            out += SeverityName(diagnostics[i].severity);
+            out += R"(","field":)";
+            AppendJsonString(out, diagnostics[i].field);
+            out += R"(,"message":)";
+            AppendJsonString(out, diagnostics[i].message);
+            out += '}';
+        }
+        out += ']';
+        return out;
+    }
+} // namespace PalCfg
 
 namespace PalCfg::Detail
 {
