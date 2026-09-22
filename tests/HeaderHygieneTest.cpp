@@ -11,6 +11,7 @@
 #include <PalCfg/Load.hpp>
 #include <PalCfg/LogSink.hpp>
 #include <PalCfg/Paths.hpp>
+#include <PalCfg/Registry.hpp>
 #include <PalCfg/Schema.hpp>
 #include <PalCfg/Win32.hpp>
 #include <PalCfg/Value.hpp>

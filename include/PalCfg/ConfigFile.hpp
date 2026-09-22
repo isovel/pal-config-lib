@@ -38,12 +38,13 @@ namespace PalCfg
       public:
         using Clock = std::chrono::steady_clock;
 
-        ConfigFile(const std::array<FieldRuntime, N>& fields, std::string path)
-            : m_fields(fields), m_path(std::move(path)), m_live(std::make_shared<const T>())
+        ConfigFile(const std::array<FieldRuntime, N>& fields, std::string path, const char* modId = "")
+            : m_fields(fields), m_path(std::move(path)), m_modId(modId), m_live(std::make_shared<const T>())
         {
         }
 
         const std::string& Path() const { return m_path; }
+        const char* ModId() const { return m_modId; }
 
         void SetSink(IDiagnosticSink& sink) { m_sink = &sink; }
         void SetInterval(Clock::duration interval) { m_interval = interval; }
@@ -170,6 +171,8 @@ namespace PalCfg
             return RenderDocument(m_fields, *Get(), options);
         }
 
+        void ReportNote(std::string message) { Report(Severity::Note, std::move(message)); }
+
       private:
         // Records the text whether or not it loaded, so a file that cannot be
         // parsed is reported once rather than on every poll.
@@ -197,6 +200,7 @@ namespace PalCfg
 
         const std::array<FieldRuntime, N>& m_fields;
         std::string m_path;
+        const char* m_modId;
 
         std::atomic<std::shared_ptr<const T>> m_live;
 

@@ -44,7 +44,9 @@ add_library(palcfg_core STATIC
     "src/core/Paths.cpp"
 )
 if(WIN32)
-    target_sources(palcfg_core PRIVATE "src/win32/Module.cpp")
+    target_sources(palcfg_core PRIVATE "src/win32/Module.cpp" "src/win32/Registry.cpp")
+else()
+    target_sources(palcfg_core PRIVATE "src/core/RegistryStub.cpp")
 endif()
 
 target_include_directories(palcfg_core PUBLIC

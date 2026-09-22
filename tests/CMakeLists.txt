@@ -26,6 +26,7 @@ add_executable(palcfg_tests
     LogSinkTest.cpp
     PathsTest.cpp
     CustomTraitTest.cpp
+    RegistryLinkTest.cpp
 )
 target_link_libraries(palcfg_tests PRIVATE PalCfg::Core Catch2::Catch2WithMain)
 if(PALCFG_BUILD_REGISTRY)
